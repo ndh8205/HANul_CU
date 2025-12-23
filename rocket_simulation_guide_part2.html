@@ -1,0 +1,2371 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>6DOF 로켓 시뮬레이션 Part 2: Monte Carlo & MEX 가속</title>
+    
+    <!-- MathJax for LaTeX rendering -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: #1a2234;
+            --bg-code: #0d1321;
+            --accent-orange: #ff6b35;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-yellow: #fbbf24;
+            --accent-red: #ef4444;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border-color: #2d3a50;
+            --gradient-1: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            --gradient-2: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            --gradient-3: linear-gradient(135deg, #06b6d4 0%, #10b981 100%);
+            --gradient-mc: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.8;
+            font-size: 16px;
+        }
+        
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 2rem;
+            background: 
+                radial-gradient(ellipse at 20% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(236, 72, 153, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(59, 130, 246, 0.1) 0%, transparent 70%),
+                var(--bg-primary);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+        }
+        
+        .hero-badge {
+            display: inline-block;
+            padding: 0.5rem 1.5rem;
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 50px;
+            font-size: 0.85rem;
+            color: var(--accent-purple);
+            margin-bottom: 2rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .hero h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .hero-subtitle {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            max-width: 700px;
+            margin-bottom: 3rem;
+        }
+        
+        .hero-stats {
+            display: flex;
+            gap: 3rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .stat {
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: var(--gradient-mc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .scroll-indicator {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            animation: bounce 2s infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateX(-50%) translateY(0); }
+            40% { transform: translateX(-50%) translateY(-10px); }
+            60% { transform: translateX(-50%) translateY(-5px); }
+        }
+        
+        .scroll-indicator svg {
+            width: 30px;
+            height: 30px;
+            stroke: var(--text-muted);
+        }
+        
+        /* Navigation */
+        .nav {
+            position: sticky;
+            top: 0;
+            background: rgba(10, 14, 26, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            z-index: 1000;
+        }
+        
+        .nav-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .nav-logo {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: var(--accent-purple);
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+            flex-wrap: wrap;
+        }
+        
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s;
+        }
+        
+        .nav-links a:hover {
+            color: var(--accent-purple);
+        }
+        
+        /* Main Content */
+        .main-content {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 4rem 2rem;
+        }
+        
+        /* Section Styles */
+        .section {
+            margin-bottom: 6rem;
+        }
+        
+        .section-number {
+            display: inline-block;
+            font-size: 0.75rem;
+            color: var(--accent-purple);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+        
+        .section h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        
+        .section h2::after {
+            content: '';
+            position: absolute;
+            bottom: -0.5rem;
+            left: 0;
+            width: 60px;
+            height: 4px;
+            background: var(--gradient-mc);
+            border-radius: 2px;
+        }
+        
+        .section h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 3rem 0 1rem;
+            color: var(--accent-cyan);
+        }
+        
+        .section h4 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 2rem 0 1rem;
+            color: var(--accent-purple);
+        }
+        
+        .section p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Cards */
+        .concept-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .concept-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient-mc);
+        }
+        
+        .concept-card.blue::before {
+            background: var(--gradient-2);
+        }
+        
+        .concept-card.green::before {
+            background: var(--gradient-3);
+        }
+        
+        .concept-card.orange::before {
+            background: var(--gradient-1);
+        }
+        
+        .concept-card h4 {
+            margin-top: 0;
+            color: var(--text-primary);
+        }
+        
+        /* Math Display */
+        .math-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 1.5rem 0;
+            overflow-x: auto;
+            text-align: center;
+        }
+        
+        .math-block.highlight-purple {
+            border-left: 4px solid var(--accent-purple);
+        }
+        
+        .math-block.highlight-blue {
+            border-left: 4px solid var(--accent-blue);
+        }
+        
+        .math-block.highlight-green {
+            border-left: 4px solid var(--accent-green);
+        }
+        
+        .math-block.highlight-orange {
+            border-left: 4px solid var(--accent-orange);
+        }
+        
+        /* Code Blocks */
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin: 1.5rem 0;
+            overflow: hidden;
+        }
+        
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .code-title {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .code-lang {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--accent-purple);
+            border-radius: 20px;
+        }
+        
+        .code-block pre {
+            padding: 1.5rem;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .code-block code {
+            color: var(--text-secondary);
+        }
+        
+        .code-comment { color: #6b7280; }
+        .code-keyword { color: #c084fc; }
+        .code-number { color: #fbbf24; }
+        .code-string { color: #34d399; }
+        .code-function { color: #60a5fa; }
+        .code-variable { color: #f472b6; }
+        
+        /* Info Boxes */
+        .info-box {
+            display: flex;
+            gap: 1rem;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin: 1.5rem 0;
+        }
+        
+        .info-box.tip {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        
+        .info-box.warning {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+        
+        .info-box.important {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .info-box.info {
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+        
+        .info-box-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .info-box-content h5 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .info-box-content p {
+            margin: 0;
+            font-size: 0.95rem;
+        }
+        
+        /* Tables */
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 1.5rem 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        th, td {
+            padding: 1rem 1.5rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        th {
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--accent-purple);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
+        
+        td {
+            color: var(--text-secondary);
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        
+        /* Download Button */
+        .download-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 3rem;
+            text-align: center;
+            margin: 4rem 0;
+        }
+        
+        .download-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 2rem;
+        }
+        
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 2rem;
+            background: var(--gradient-mc);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 40px rgba(139, 92, 246, 0.3);
+        }
+        
+        .download-btn.secondary {
+            background: var(--gradient-3);
+        }
+        
+        .download-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        /* Lists */
+        ul, ol {
+            color: var(--text-secondary);
+            padding-left: 1.5rem;
+            margin: 1rem 0;
+        }
+        
+        li {
+            margin-bottom: 0.75rem;
+        }
+        
+        li::marker {
+            color: var(--accent-purple);
+        }
+        
+        /* TOC */
+        .toc {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+        
+        .toc h3 {
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+        }
+        
+        .toc-list {
+            list-style: none;
+            padding: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .toc-list a {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .toc-list a:hover {
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--accent-purple);
+        }
+        
+        .toc-number {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(139, 92, 246, 0.1);
+            color: var(--accent-purple);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        /* Footer */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            padding: 3rem 2rem;
+            text-align: center;
+            color: var(--text-muted);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+            
+            .hero-stats {
+                gap: 1.5rem;
+            }
+            
+            .section h2 {
+                font-size: 1.75rem;
+            }
+            
+            .nav-links {
+                display: none;
+            }
+            
+            .concept-card, .math-block, .code-block {
+                padding: 1.25rem;
+            }
+            
+            .download-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+        
+        /* Highlight text */
+        .highlight {
+            color: var(--accent-purple);
+            font-weight: 500;
+        }
+        
+        .highlight-blue {
+            color: var(--accent-blue);
+            font-weight: 500;
+        }
+        
+        .highlight-green {
+            color: var(--accent-green);
+            font-weight: 500;
+        }
+        
+        .highlight-orange {
+            color: var(--accent-orange);
+            font-weight: 500;
+        }
+        
+        /* Flow chart style */
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+        
+        .flow-step {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .flow-number {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-mc);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        
+        .flow-content {
+            flex: 1;
+            background: var(--bg-card);
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .flow-arrow {
+            width: 40px;
+            display: flex;
+            justify-content: center;
+            color: var(--accent-purple);
+            font-size: 1.5rem;
+        }
+        
+        /* Distribution visualization */
+        .distribution-viz {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+            text-align: center;
+        }
+        
+        .bell-curve {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <span class="hero-badge">Part 2 - Advanced Topics</span>
+        <h1>Monte Carlo & MEX 가속</h1>
+        <p class="hero-subtitle">
+            불확실성 분석을 위한 Monte Carlo 시뮬레이션과 
+            MATLAB Coder를 활용한 MEX 컴파일로 1000배 빠른 시뮬레이션을 구현합니다
+        </p>
+        <div class="hero-stats">
+            <div class="stat">
+                <div class="stat-number">1000</div>
+                <div class="stat-label">MC 반복 횟수</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">3σ</div>
+                <div class="stat-label">불확실성 범위</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">50x</div>
+                <div class="stat-label">MEX 속도 향상</div>
+            </div>
+        </div>
+        <div class="scroll-indicator">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
+            </svg>
+        </div>
+    </section>
+    
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-content">
+            <div class="nav-logo">🎲 Monte Carlo Sim</div>
+            <ul class="nav-links">
+                <li><a href="#montecarlo">Monte Carlo</a></li>
+                <li><a href="#uncertainty">불확실성</a></li>
+                <li><a href="#statistics">통계 분석</a></li>
+                <li><a href="#sensitivity">민감도</a></li>
+                <li><a href="#mex">MEX 가속</a></li>
+                <li><a href="#download">코드 다운로드</a></li>
+            </ul>
+        </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="main-content">
+        
+        <!-- Table of Contents -->
+        <div class="toc">
+            <h3>📚 목차</h3>
+            <ul class="toc-list">
+                <li><a href="#montecarlo"><span class="toc-number">1</span>Monte Carlo 시뮬레이션이란?</a></li>
+                <li><a href="#uncertainty"><span class="toc-number">2</span>불확실성 모델링</a></li>
+                <li><a href="#distribution"><span class="toc-number">3</span>확률 분포와 샘플링</a></li>
+                <li><a href="#wind"><span class="toc-number">4</span>바람 모델</a></li>
+                <li><a href="#statistics"><span class="toc-number">5</span>통계 분석</a></li>
+                <li><a href="#sensitivity"><span class="toc-number">6</span>민감도 분석</a></li>
+                <li><a href="#mex"><span class="toc-number">7</span>MEX 컴파일과 가속</a></li>
+                <li><a href="#coder"><span class="toc-number">8</span>MATLAB Coder 사용법</a></li>
+                <li><a href="#optimization"><span class="toc-number">9</span>코드 최적화 기법</a></li>
+                <li><a href="#interpretation"><span class="toc-number">10</span>결과 해석</a></li>
+            </ul>
+        </div>
+        
+        <!-- Section 1: Monte Carlo Introduction -->
+        <section id="montecarlo" class="section">
+            <span class="section-number">Chapter 01</span>
+            <h2>Monte Carlo 시뮬레이션이란?</h2>
+            
+            <p>
+                <span class="highlight">Monte Carlo 시뮬레이션</span>은 무작위 샘플링을 사용하여 
+                복잡한 시스템의 확률적 결과를 예측하는 방법입니다. 
+                이름은 도박으로 유명한 모나코의 Monte Carlo 카지노에서 유래했습니다.
+            </p>
+            
+            <div class="concept-card">
+                <h4>🎲 핵심 아이디어</h4>
+                <p>
+                    실제 세계에서는 모든 파라미터가 정확히 알려져 있지 않습니다.
+                    추력, 항력계수, 발사각 등 모든 것에 <strong>불확실성</strong>이 있습니다.
+                    Monte Carlo는 이러한 불확실성을 가진 파라미터들을 무작위로 바꿔가며 
+                    시뮬레이션을 수천 번 반복하여, 가능한 결과의 <strong>분포</strong>를 얻습니다.
+                </p>
+            </div>
+            
+            <h3>왜 Monte Carlo가 필요한가?</h3>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>단일 시뮬레이션</th>
+                            <th>Monte Carlo 시뮬레이션</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>고정된 파라미터 사용</td>
+                            <td>확률적으로 변하는 파라미터</td>
+                        </tr>
+                        <tr>
+                            <td>단일 결과값</td>
+                            <td>결과의 분포 (평균, 표준편차)</td>
+                        </tr>
+                        <tr>
+                            <td>"최대 고도는 250m"</td>
+                            <td>"최대 고도는 250±30m (95% 신뢰)"</td>
+                        </tr>
+                        <tr>
+                            <td>최악/최선 시나리오 모름</td>
+                            <td>극단적 결과 확률 계산 가능</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <h3>Monte Carlo 시뮬레이션 흐름</h3>
+            
+            <div class="flow-container">
+                <div class="flow-step">
+                    <div class="flow-number">1</div>
+                    <div class="flow-content">
+                        <strong>불확실성 정의</strong><br>
+                        각 파라미터의 불확실성 범위 설정 (예: 추력 ±15%)
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-arrow">↓</div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number">2</div>
+                    <div class="flow-content">
+                        <strong>파라미터 샘플링</strong><br>
+                        확률 분포에서 무작위로 파라미터 값 추출
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-arrow">↓</div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number">3</div>
+                    <div class="flow-content">
+                        <strong>시뮬레이션 실행</strong><br>
+                        샘플링된 파라미터로 전체 6DOF 시뮬레이션 수행
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-arrow">↓</div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number">4</div>
+                    <div class="flow-content">
+                        <strong>결과 기록</strong><br>
+                        최대 고도, 최대 속도, 착지 위치 등 저장
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-arrow">↓</div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number">5</div>
+                    <div class="flow-content">
+                        <strong>반복 (N번)</strong><br>
+                        1000번 이상 반복하여 통계적 유의성 확보
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-arrow">↓</div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number">6</div>
+                    <div class="flow-content">
+                        <strong>통계 분석</strong><br>
+                        평균, 표준편차, 백분위수, 민감도 분석
+                    </div>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">Monte Carlo 메인 루프</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code>N_MC = <span class="code-number">1000</span>;  <span class="code-comment">% Monte Carlo 횟수</span>
+
+<span class="code-keyword">for</span> i = <span class="code-number">1</span>:N_MC
+    <span class="code-comment">% 1. 파라미터 샘플링 (확률적)</span>
+    thrust_scale = <span class="code-number">1.0</span> + (unc.thrust_3sig/<span class="code-number">3</span>) * randn();
+    Cd0 = nom.Cd0 * (<span class="code-number">1.0</span> + (unc.Cd0_3sig/<span class="code-number">3</span>) * randn());
+    
+    <span class="code-comment">% 2. 시뮬레이션 실행</span>
+    [apogee, max_speed, ...] = rocket_sim_core(thrust_scale, Cd0, ...);
+    
+    <span class="code-comment">% 3. 결과 저장</span>
+    results.apogee(i) = apogee;
+    results.max_speed(i) = max_speed;
+<span class="code-keyword">end</span>
+
+<span class="code-comment">% 4. 통계 분석</span>
+apogee_mean = mean(results.apogee);
+apogee_std = std(results.apogee);</code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 2: Uncertainty Modeling -->
+        <section id="uncertainty" class="section">
+            <span class="section-number">Chapter 02</span>
+            <h2>불확실성 모델링</h2>
+            
+            <p>
+                모든 물리적 파라미터에는 불확실성이 있습니다. 
+                이를 <span class="highlight">3-sigma (3σ)</span> 값으로 정의합니다.
+            </p>
+            
+            <h3>3-Sigma 규칙</h3>
+            
+            <div class="concept-card blue">
+                <h4>📊 정규분포와 3σ</h4>
+                <p>
+                    정규분포에서:
+                </p>
+                <ul>
+                    <li><strong>1σ 범위:</strong> 데이터의 68.3%가 포함</li>
+                    <li><strong>2σ 범위:</strong> 데이터의 95.4%가 포함</li>
+                    <li><strong>3σ 범위:</strong> 데이터의 99.7%가 포함</li>
+                </ul>
+                <p>
+                    따라서 "추력 ±15% (3σ)"는 99.7%의 경우 추력이 공칭값의 85%~115% 사이라는 의미입니다.
+                </p>
+            </div>
+            
+            <div class="math-block highlight-purple">
+                \[
+                \text{표준편차} (\sigma) = \frac{\text{3σ 범위}}{3}
+                \]
+            </div>
+            
+            <h3>불확실성 파라미터</h3>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>파라미터</th>
+                            <th>공칭값</th>
+                            <th>3σ 불확실성</th>
+                            <th>설명</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>추력 스케일</td>
+                            <td>1.0</td>
+                            <td>±15%</td>
+                            <td>모터 성능 변동</td>
+                        </tr>
+                        <tr>
+                            <td>항력계수 (Cd0)</td>
+                            <td>0.224</td>
+                            <td>±20%</td>
+                            <td>공력 불확실성</td>
+                        </tr>
+                        <tr>
+                            <td>법선력 기울기 (CN_α)</td>
+                            <td>12.0</td>
+                            <td>±15%</td>
+                            <td>핀 효과 변동</td>
+                        </tr>
+                        <tr>
+                            <td>발사각</td>
+                            <td>86°</td>
+                            <td>±2°</td>
+                            <td>발사대 정렬 오차</td>
+                        </tr>
+                        <tr>
+                            <td>질량 스케일</td>
+                            <td>1.0</td>
+                            <td>±5%</td>
+                            <td>제작 공차</td>
+                        </tr>
+                        <tr>
+                            <td>풍속</td>
+                            <td>0</td>
+                            <td>0~3 m/s</td>
+                            <td>균등분포</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">불확실성 정의</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">%% 불확실성 정의 (3-sigma 값)</span>
+unc.thrust_3sig = <span class="code-number">0.15</span>;       <span class="code-comment">% 추력 ±15%</span>
+unc.Cd0_3sig = <span class="code-number">0.20</span>;          <span class="code-comment">% Cd0 ±20%</span>
+unc.CN_alpha_3sig = <span class="code-number">0.15</span>;     <span class="code-comment">% CN_alpha ±15%</span>
+unc.launch_angle_3sig = <span class="code-number">2.0</span>;  <span class="code-comment">% 발사각 ±2°</span>
+unc.mass_3sig = <span class="code-number">0.05</span>;         <span class="code-comment">% 질량 ±5%</span>
+unc.wind_max = <span class="code-number">3.0</span>;           <span class="code-comment">% 최대 풍속 [m/s]</span>
+
+<span class="code-comment">%% 공칭값</span>
+nom.Cd0 = <span class="code-number">0.224</span>;
+nom.CN_alpha = <span class="code-number">12.0</span>;
+nom.launch_angle = <span class="code-number">86.0</span>;</code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 3: Probability Distributions -->
+        <section id="distribution" class="section">
+            <span class="section-number">Chapter 03</span>
+            <h2>확률 분포와 샘플링</h2>
+            
+            <p>
+                불확실성을 모델링하기 위해 적절한 확률 분포를 선택하고 
+                그로부터 무작위 값을 샘플링합니다.
+            </p>
+            
+            <h3>정규분포 (Normal Distribution)</h3>
+            
+            <div class="concept-card green">
+                <h4>📈 가우시안 분포</h4>
+                <p>
+                    대부분의 물리적 파라미터는 정규분포를 따릅니다. 
+                    평균(μ) 주변에 값이 집중되고, 멀어질수록 확률이 감소합니다.
+                </p>
+            </div>
+            
+            <div class="math-block highlight-green">
+                \[
+                f(x) = \frac{1}{\sigma\sqrt{2\pi}} \exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right)
+                \]
+            </div>
+            
+            <p>MATLAB에서 정규분포 샘플링:</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">정규분포 샘플링</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% randn()은 표준정규분포 (μ=0, σ=1)에서 샘플링</span>
+x = randn();  <span class="code-comment">% -∞ ~ +∞ 범위의 값</span>
+
+<span class="code-comment">% 원하는 분포로 변환: X = μ + σ * randn()</span>
+<span class="code-comment">% 3σ 불확실성을 σ로 변환: σ = 3σ값 / 3</span>
+
+<span class="code-comment">% 예: 추력 스케일 (공칭=1.0, 3σ=±15%)</span>
+sigma_thrust = unc.thrust_3sig / <span class="code-number">3</span>;  <span class="code-comment">% 0.15/3 = 0.05</span>
+thrust_scale = <span class="code-number">1.0</span> + sigma_thrust * randn();
+
+<span class="code-comment">% 예: Cd0 (공칭=0.224, 3σ=±20%)</span>
+Cd0 = nom.Cd0 * (<span class="code-number">1.0</span> + (unc.Cd0_3sig/<span class="code-number">3</span>) * randn());</code></pre>
+            </div>
+            
+            <h3>균등분포 (Uniform Distribution)</h3>
+            
+            <p>
+                풍속이나 풍향처럼 특정 범위 내에서 모든 값이 동등하게 가능한 경우 사용합니다.
+            </p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                f(x) = \begin{cases}
+                \frac{1}{b-a} & a \leq x \leq b \\
+                0 & \text{otherwise}
+                \end{cases}
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">균등분포 샘플링</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% rand()는 [0, 1) 범위의 균등분포</span>
+
+<span class="code-comment">% 풍속: 0 ~ 3 m/s</span>
+wind_speed = unc.wind_max * rand();  <span class="code-comment">% [0, 3)</span>
+
+<span class="code-comment">% 풍향: 0 ~ 2π rad (모든 방향 동등)</span>
+wind_dir = <span class="code-number">2</span>*pi * rand();  <span class="code-comment">% [0, 2π)</span></code></pre>
+            </div>
+            
+            <h3>난수 시드 (Random Seed)</h3>
+            
+            <div class="info-box warning">
+                <span class="info-box-icon">⚠️</span>
+                <div class="info-box-content">
+                    <h5>재현 가능성</h5>
+                    <p>
+                        <code>rng('shuffle')</code>은 현재 시간을 기반으로 시드를 설정합니다.
+                        결과를 재현하려면 <code>rng(42)</code>와 같이 고정 시드를 사용하세요.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">난수 시드 설정</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 매번 다른 결과</span>
+rng(<span class="code-string">'shuffle'</span>);
+
+<span class="code-comment">% 재현 가능한 결과</span>
+rng(<span class="code-number">42</span>);  <span class="code-comment">% 시드 = 42</span></code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 4: Wind Model -->
+        <section id="wind" class="section">
+            <span class="section-number">Chapter 04</span>
+            <h2>바람 모델</h2>
+            
+            <p>
+                바람은 로켓 비행에 큰 영향을 미칩니다. 
+                단순화된 <span class="highlight">일정 바람 모델</span>을 사용합니다.
+            </p>
+            
+            <h3>바람 벡터</h3>
+            
+            <div class="concept-card orange">
+                <h4>💨 바람의 표현</h4>
+                <p>
+                    바람은 풍속(speed)과 풍향(direction)으로 정의됩니다.
+                    NED 좌표계에서 바람 벡터:
+                </p>
+            </div>
+            
+            <div class="math-block highlight-orange">
+                \[
+                \vec{W}_I = \begin{bmatrix}
+                W \cos(\theta_{wind}) \\
+                W \sin(\theta_{wind}) \\
+                0
+                \end{bmatrix}
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(W\): 풍속 [m/s]</li>
+                <li>\(\theta_{wind}\): 풍향 [rad] (북쪽=0, 동쪽=π/2)</li>
+            </ul>
+            
+            <h3>상대 속도</h3>
+            
+            <p>
+                공력은 <strong>공기에 대한 상대 속도</strong>에 의해 결정됩니다:
+            </p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                \vec{V}_{rel} = \vec{V}_{body} - \vec{W}_{body}
+                \]
+            </div>
+            
+            <p>바람을 Body frame으로 변환해야 합니다:</p>
+            
+            <div class="math-block">
+                \[
+                \vec{W}_{body} = \mathbf{R}_{I \to B} \cdot \vec{W}_I
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">바람 모델 구현</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 바람 벡터 (관성계, NED)</span>
+wind_I = [wind_speed * cos(wind_dir); ...
+          wind_speed * sin(wind_dir); ...
+          <span class="code-number">0</span>];
+
+<span class="code-comment">% Body frame으로 변환</span>
+wind_B = R_I2B * wind_I;
+
+<span class="code-comment">% 상대 속도 계산</span>
+V_rel = vel - wind_B;
+V = norm(V_rel);
+
+<span class="code-comment">% 받음각 계산 (상대 속도 기준!)</span>
+alpha = atan2(V_rel(<span class="code-number">3</span>), V_rel(<span class="code-number">1</span>));
+beta = atan2(V_rel(<span class="code-number">2</span>), V_rel(<span class="code-number">1</span>));</code></pre>
+            </div>
+            
+            <div class="info-box tip">
+                <span class="info-box-icon">💡</span>
+                <div class="info-box-content">
+                    <h5>바람의 영향</h5>
+                    <p>
+                        맞바람은 받음각을 증가시켜 항력을 높이고 고도를 낮춥니다.
+                        측풍은 옆미끄럼각(β)을 만들어 착지점을 이동시킵니다.
+                    </p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Section 5: Statistics -->
+        <section id="statistics" class="section">
+            <span class="section-number">Chapter 05</span>
+            <h2>통계 분석</h2>
+            
+            <p>
+                Monte Carlo 결과를 분석하여 시스템의 성능과 신뢰성을 평가합니다.
+            </p>
+            
+            <h3>기본 통계량</h3>
+            
+            <div class="concept-card">
+                <h4>📊 주요 통계량</h4>
+                <ul>
+                    <li><strong>평균 (Mean, μ):</strong> 결과의 중심 경향</li>
+                    <li><strong>표준편차 (Standard Deviation, σ):</strong> 결과의 퍼짐 정도</li>
+                    <li><strong>범위 (Range):</strong> 최솟값 ~ 최댓값</li>
+                    <li><strong>백분위수 (Percentile):</strong> 특정 비율 이하의 값</li>
+                </ul>
+            </div>
+            
+            <div class="math-block highlight-purple">
+                \[
+                \mu = \frac{1}{N} \sum_{i=1}^{N} x_i
+                \]
+            </div>
+            
+            <div class="math-block highlight-blue">
+                \[
+                \sigma = \sqrt{\frac{1}{N-1} \sum_{i=1}^{N} (x_i - \mu)^2}
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">통계량 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 기본 통계</span>
+apogee_mean = mean(results.apogee);
+apogee_std = std(results.apogee);
+
+fprintf(<span class="code-string">'평균: %.1f m\n'</span>, apogee_mean);
+fprintf(<span class="code-string">'표준편차: %.1f m\n'</span>, apogee_std);
+fprintf(<span class="code-string">'범위: %.1f ~ %.1f m\n'</span>, min(results.apogee), max(results.apogee));
+
+<span class="code-comment">% 3σ 범위 (99.7% 신뢰구간)</span>
+fprintf(<span class="code-string">'3σ 범위: %.1f ~ %.1f m\n'</span>, ...
+        apogee_mean - <span class="code-number">3</span>*apogee_std, ...
+        apogee_mean + <span class="code-number">3</span>*apogee_std);
+
+<span class="code-comment">% 특정 값 이상 확률</span>
+percentile_340 = sum(results.apogee >= <span class="code-number">339.57</span>) / N_MC * <span class="code-number">100</span>;
+fprintf(<span class="code-string">'339.57m 이상 확률: %.1f%%\n'</span>, percentile_340);</code></pre>
+            </div>
+            
+            <h3>누적분포함수 (CDF)</h3>
+            
+            <p>
+                CDF는 특정 값 이하일 확률을 보여줍니다:
+            </p>
+            
+            <div class="math-block highlight-green">
+                \[
+                F(x) = P(X \leq x) = \frac{\text{x 이하인 샘플 수}}{N}
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">CDF 플롯</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 경험적 CDF 계산</span>
+[f, x] = ecdf(results.apogee);
+
+<span class="code-comment">% 플롯</span>
+plot(x, f*<span class="code-number">100</span>, <span class="code-string">'b-'</span>, <span class="code-string">'LineWidth'</span>, <span class="code-number">2</span>);
+xlabel(<span class="code-string">'최대 고도 [m]'</span>);
+ylabel(<span class="code-string">'누적 확률 [%]'</span>);
+title(<span class="code-string">'최대 고도 CDF'</span>);</code></pre>
+            </div>
+            
+            <h3>히스토그램</h3>
+            
+            <p>결과의 분포를 시각화합니다:</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">히스토그램 플롯</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code>histogram(results.apogee, <span class="code-number">30</span>, ...
+          <span class="code-string">'FaceColor'</span>, [<span class="code-number">0.3</span> <span class="code-number">0.6</span> <span class="code-number">0.9</span>], ...
+          <span class="code-string">'EdgeColor'</span>, <span class="code-string">'w'</span>);
+hold on;
+
+<span class="code-comment">% 평균선</span>
+xline(apogee_mean, <span class="code-string">'r-'</span>, <span class="code-string">'LineWidth'</span>, <span class="code-number">2</span>);
+
+<span class="code-comment">% ±3σ 범위</span>
+xline(apogee_mean - <span class="code-number">3</span>*apogee_std, <span class="code-string">'r--'</span>);
+xline(apogee_mean + <span class="code-number">3</span>*apogee_std, <span class="code-string">'r--'</span>);
+
+<span class="code-comment">% 비교값</span>
+xline(<span class="code-number">249</span>, <span class="code-string">'g-'</span>, <span class="code-string">'OpenRocket'</span>);
+xline(<span class="code-number">339.57</span>, <span class="code-string">'m-'</span>, <span class="code-string">'실측'</span>);</code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 6: Sensitivity Analysis -->
+        <section id="sensitivity" class="section">
+            <span class="section-number">Chapter 06</span>
+            <h2>민감도 분석</h2>
+            
+            <p>
+                <span class="highlight">민감도 분석</span>은 어떤 파라미터가 결과에 가장 큰 영향을 미치는지 
+                파악하는 과정입니다.
+            </p>
+            
+            <h3>상관계수 (Correlation Coefficient)</h3>
+            
+            <div class="concept-card blue">
+                <h4>📈 피어슨 상관계수</h4>
+                <p>
+                    두 변수 사이의 선형 관계 강도를 -1에서 +1 사이로 나타냅니다.
+                </p>
+                <ul>
+                    <li><strong>+1:</strong> 완벽한 양의 상관 (같이 증가)</li>
+                    <li><strong>0:</strong> 상관 없음</li>
+                    <li><strong>-1:</strong> 완벽한 음의 상관 (반대로 변화)</li>
+                </ul>
+            </div>
+            
+            <div class="math-block highlight-blue">
+                \[
+                r_{xy} = \frac{\sum_{i=1}^{N}(x_i - \bar{x})(y_i - \bar{y})}
+                {\sqrt{\sum_{i=1}^{N}(x_i - \bar{x})^2} \sqrt{\sum_{i=1}^{N}(y_i - \bar{y})^2}}
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">민감도 분석</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code>param_names = {<span class="code-string">'추력'</span>, <span class="code-string">'Cd0'</span>, <span class="code-string">'CN_alpha'</span>, <span class="code-string">'발사각'</span>, <span class="code-string">'질량'</span>, <span class="code-string">'풍속'</span>};
+param_data = [params.thrust_scale, params.Cd0, params.CN_alpha, ...
+              params.launch_angle, params.mass_scale, params.wind_speed];
+
+correlations = zeros(<span class="code-number">6</span>, <span class="code-number">1</span>);
+<span class="code-keyword">for</span> i = <span class="code-number">1</span>:<span class="code-number">6</span>
+    r = corrcoef(param_data(:,i), results.apogee);
+    correlations(i) = r(<span class="code-number">1</span>,<span class="code-number">2</span>);
+    fprintf(<span class="code-string">'  %s: %.3f\n'</span>, param_names{i}, correlations(i));
+<span class="code-keyword">end</span>
+
+<span class="code-comment">% 막대 그래프로 시각화</span>
+barh(correlations);
+set(gca, <span class="code-string">'YTickLabel'</span>, param_names);
+xlabel(<span class="code-string">'상관계수'</span>);
+title(<span class="code-string">'민감도 분석'</span>);</code></pre>
+            </div>
+            
+            <h3>결과 해석 예시</h3>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>파라미터</th>
+                            <th>상관계수</th>
+                            <th>해석</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>추력</td>
+                            <td>+0.85</td>
+                            <td>추력↑ → 고도↑ (강한 양의 상관)</td>
+                        </tr>
+                        <tr>
+                            <td>Cd0 (항력계수)</td>
+                            <td>-0.72</td>
+                            <td>항력↑ → 고도↓ (강한 음의 상관)</td>
+                        </tr>
+                        <tr>
+                            <td>질량</td>
+                            <td>-0.45</td>
+                            <td>질량↑ → 고도↓ (중간 음의 상관)</td>
+                        </tr>
+                        <tr>
+                            <td>발사각</td>
+                            <td>+0.15</td>
+                            <td>약한 영향</td>
+                        </tr>
+                        <tr>
+                            <td>풍속</td>
+                            <td>-0.08</td>
+                            <td>거의 영향 없음</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="info-box tip">
+                <span class="info-box-icon">💡</span>
+                <div class="info-box-content">
+                    <h5>민감도 분석 활용</h5>
+                    <p>
+                        민감도가 높은 파라미터 (|r| > 0.5)에 집중하세요:
+                    </p>
+                    <ul>
+                        <li>제조 공차를 줄이거나</li>
+                        <li>더 정확한 측정을 수행하거나</li>
+                        <li>설계를 변경하여 민감도를 낮추세요</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Section 7: MEX Acceleration -->
+        <section id="mex" class="section">
+            <span class="section-number">Chapter 07</span>
+            <h2>MEX 컴파일과 가속</h2>
+            
+            <p>
+                Monte Carlo 시뮬레이션은 수천 번의 반복이 필요하므로 속도가 중요합니다.
+                <span class="highlight">MEX (MATLAB Executable)</span>로 컴파일하면 
+                C/C++ 수준의 속도를 얻을 수 있습니다.
+            </p>
+            
+            <div class="concept-card green">
+                <h4>⚡ MEX란?</h4>
+                <p>
+                    MEX는 MATLAB 코드를 컴파일하여 바이너리 실행 파일로 변환한 것입니다.
+                    인터프리터 오버헤드가 없어 <strong>10~100배</strong> 빠릅니다.
+                </p>
+            </div>
+            
+            <h3>MATLAB vs MEX 비교</h3>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>특성</th>
+                            <th>MATLAB</th>
+                            <th>MEX</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>실행 방식</td>
+                            <td>인터프리터</td>
+                            <td>네이티브 코드</td>
+                        </tr>
+                        <tr>
+                            <td>속도</td>
+                            <td>기준 (1x)</td>
+                            <td>10~100x 빠름</td>
+                        </tr>
+                        <tr>
+                            <td>디버깅</td>
+                            <td>쉬움</td>
+                            <td>어려움</td>
+                        </tr>
+                        <tr>
+                            <td>개발 시간</td>
+                            <td>빠름</td>
+                            <td>컴파일 필요</td>
+                        </tr>
+                        <tr>
+                            <td>파일 확장자</td>
+                            <td>.m</td>
+                            <td>.mexw64 (Windows)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <h3>MATLAB Coder</h3>
+            
+            <p>
+                <span class="highlight-blue">MATLAB Coder</span>는 MATLAB 코드를 C/C++ 코드로 
+                자동 변환하는 도구입니다.
+            </p>
+            
+            <div class="flow-container">
+                <div class="flow-step">
+                    <div class="flow-number">1</div>
+                    <div class="flow-content">
+                        <strong>MATLAB 코드 작성</strong><br>
+                        <code>rocket_sim_core.m</code>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-arrow">↓</div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number">2</div>
+                    <div class="flow-content">
+                        <strong>Coder 호환성 확보</strong><br>
+                        <code>%#codegen</code> 프래그마 추가
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-arrow">↓</div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number">3</div>
+                    <div class="flow-content">
+                        <strong>codegen 명령 실행</strong><br>
+                        <code>codegen rocket_sim_core -args {...}</code>
+                    </div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-arrow">↓</div>
+                </div>
+                <div class="flow-step">
+                    <div class="flow-number">4</div>
+                    <div class="flow-content">
+                        <strong>MEX 파일 생성</strong><br>
+                        <code>rocket_sim_core_mex.mexw64</code>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Section 8: MATLAB Coder Usage -->
+        <section id="coder" class="section">
+            <span class="section-number">Chapter 08</span>
+            <h2>MATLAB Coder 사용법</h2>
+            
+            <h3>1단계: 코드 준비</h3>
+            
+            <p>MEX 컴파일을 위해 코드가 몇 가지 규칙을 따라야 합니다:</p>
+            
+            <div class="concept-card orange">
+                <h4>✅ Coder 호환성 요구사항</h4>
+                <ul>
+                    <li>동적 메모리 할당 제한 (배열 크기 미리 알려야 함)</li>
+                    <li>일부 MATLAB 함수 사용 불가 (eval, assignin 등)</li>
+                    <li>셀 배열, 구조체 필드 동적 접근 제한</li>
+                    <li><code>%#codegen</code> 프래그마로 호환성 검사</li>
+                </ul>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">Coder 호환 함수 선언</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-keyword">function</span> [apogee, max_speed, ...] = rocket_sim_core(thrust_scale, ...)
+<span class="code-comment">%#codegen</span>  <span class="code-comment">% ← 이 주석이 Coder 호환성 검사 활성화</span>
+
+<span class="code-comment">% Coder 호환: 배열 크기 명시적 초기화</span>
+pos = zeros(<span class="code-number">3</span>, <span class="code-number">1</span>);
+vel = zeros(<span class="code-number">3</span>, <span class="code-number">1</span>);
+quat = zeros(<span class="code-number">4</span>, <span class="code-number">1</span>);
+
+<span class="code-comment">% int32로 타입 명시</span>
+N_steps = int32(floor(t_end / dt)) + <span class="code-number">1</span>;</code></pre>
+            </div>
+            
+            <h3>2단계: 빌드 스크립트</h3>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">MEX 빌드 스크립트</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">%% 입력 타입 정의 (샘플 값)</span>
+thrust_scale = <span class="code-number">1.0</span>;
+Cd0 = <span class="code-number">0.15</span>;
+CN_alpha = <span class="code-number">12.0</span>;
+launch_angle = <span class="code-number">86.0</span>;
+mass_scale = <span class="code-number">1.0</span>;
+wind_speed = <span class="code-number">0.0</span>;
+wind_dir = <span class="code-number">0.0</span>;
+Q_force = <span class="code-number">1.0</span>;
+Q_moment = <span class="code-number">0.01</span>;
+dt = <span class="code-number">0.002</span>;
+t_end = <span class="code-number">20.0</span>;
+
+<span class="code-comment">%% codegen 설정</span>
+cfg = coder.config(<span class="code-string">'mex'</span>);
+cfg.GenerateReport = <span class="code-keyword">true</span>;      <span class="code-comment">% HTML 리포트 생성</span>
+cfg.ReportPotentialDifferences = <span class="code-keyword">false</span>;
+
+<span class="code-comment">% 최적화 설정</span>
+cfg.SaturateOnIntegerOverflow = <span class="code-keyword">false</span>;  <span class="code-comment">% 오버플로 체크 해제</span>
+cfg.IntegrityChecks = <span class="code-keyword">false</span>;             <span class="code-comment">% 범위 체크 해제</span>
+cfg.ResponsivenessChecks = <span class="code-keyword">false</span>;        <span class="code-comment">% 응답성 체크 해제</span>
+
+<span class="code-comment">%% 컴파일</span>
+input_args = {thrust_scale, Cd0, CN_alpha, launch_angle, mass_scale, ...
+              wind_speed, wind_dir, Q_force, Q_moment, dt, t_end};
+
+codegen(<span class="code-string">'rocket_sim_core'</span>, <span class="code-string">'-config'</span>, cfg, <span class="code-string">'-args'</span>, input_args);</code></pre>
+            </div>
+            
+            <h3>3단계: 사용</h3>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">MEX 파일 사용</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% MEX 버전 호출 (함수명에 _mex 접미사)</span>
+[apogee, time, speed, mach, impact, dx, dy] = ...
+    rocket_sim_core_mex(<span class="code-number">1.0</span>, <span class="code-number">0.15</span>, <span class="code-number">12.0</span>, <span class="code-number">86.0</span>, <span class="code-number">1.0</span>, ...
+                        <span class="code-number">0.0</span>, <span class="code-number">0.0</span>, <span class="code-number">1.0</span>, <span class="code-number">0.01</span>, <span class="code-number">0.002</span>, <span class="code-number">20.0</span>);
+
+<span class="code-comment">% MATLAB 버전과 동일한 인터페이스!</span></code></pre>
+            </div>
+            
+            <div class="info-box warning">
+                <span class="info-box-icon">⚠️</span>
+                <div class="info-box-content">
+                    <h5>주의사항</h5>
+                    <p>
+                        MEX 파일은 컴파일된 플랫폼에서만 실행됩니다.
+                        Windows에서 컴파일한 .mexw64는 Mac/Linux에서 사용할 수 없습니다.
+                    </p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Section 9: Code Optimization -->
+        <section id="optimization" class="section">
+            <span class="section-number">Chapter 09</span>
+            <h2>코드 최적화 기법</h2>
+            
+            <p>
+                MEX 외에도 MATLAB 코드 자체를 최적화할 수 있습니다.
+            </p>
+            
+            <h3>1. 배열 사전 할당</h3>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">배열 사전 할당</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% ❌ 나쁜 예: 루프에서 배열 크기 증가</span>
+<span class="code-keyword">for</span> i = <span class="code-number">1</span>:N
+    results(i) = compute(i);  <span class="code-comment">% 매번 메모리 재할당!</span>
+<span class="code-keyword">end</span>
+
+<span class="code-comment">% ✅ 좋은 예: 미리 할당</span>
+results = zeros(N, <span class="code-number">1</span>);  <span class="code-comment">% 한 번만 할당</span>
+<span class="code-keyword">for</span> i = <span class="code-number">1</span>:N
+    results(i) = compute(i);
+<span class="code-keyword">end</span></code></pre>
+            </div>
+            
+            <h3>2. 벡터화</h3>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">벡터화 연산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% ❌ 나쁜 예: for 루프</span>
+<span class="code-keyword">for</span> i = <span class="code-number">1</span>:N
+    y(i) = x(i)^<span class="code-number">2</span> + <span class="code-number">2</span>*x(i) + <span class="code-number">1</span>;
+<span class="code-keyword">end</span>
+
+<span class="code-comment">% ✅ 좋은 예: 벡터화 (훨씬 빠름)</span>
+y = x.^<span class="code-number">2</span> + <span class="code-number">2</span>*x + <span class="code-number">1</span>;</code></pre>
+            </div>
+            
+            <h3>3. Coder 호환 보간 함수</h3>
+            
+            <p>
+                <code>interp1</code>은 Coder에서 제한이 있어 직접 구현합니다:
+            </p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">Coder 호환 선형 보간</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-keyword">function</span> yi = interp1_coder(x, y, xi)
+    <span class="code-comment">% 선형 보간 (Coder 호환)</span>
+    n = length(x);
+    
+    <span class="code-comment">% 경계 처리</span>
+    <span class="code-keyword">if</span> xi <= x(<span class="code-number">1</span>)
+        yi = y(<span class="code-number">1</span>);
+        <span class="code-keyword">return</span>;
+    <span class="code-keyword">end</span>
+    <span class="code-keyword">if</span> xi >= x(n)
+        yi = y(n);
+        <span class="code-keyword">return</span>;
+    <span class="code-keyword">end</span>
+    
+    <span class="code-comment">% 구간 찾기</span>
+    idx = <span class="code-number">1</span>;
+    <span class="code-keyword">for</span> k = <span class="code-number">1</span>:n-<span class="code-number">1</span>
+        <span class="code-keyword">if</span> xi >= x(k) && xi < x(k+<span class="code-number">1</span>)
+            idx = k;
+            <span class="code-keyword">break</span>;
+        <span class="code-keyword">end</span>
+    <span class="code-keyword">end</span>
+    
+    <span class="code-comment">% 선형 보간</span>
+    t = (xi - x(idx)) / (x(idx+<span class="code-number">1</span>) - x(idx));
+    yi = y(idx) + t * (y(idx+<span class="code-number">1</span>) - y(idx));
+<span class="code-keyword">end</span></code></pre>
+            </div>
+            
+            <h3>4. Coder 호환 대기 모델</h3>
+            
+            <p>
+                <code>atmosisa</code> 대신 직접 구현합니다:
+            </p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">ISA 대기 모델</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-keyword">function</span> [rho, a] = atmos_isa(alt)
+    <span class="code-comment">% ISA 대기 모델 (Coder 호환)</span>
+    T0 = <span class="code-number">288.15</span>;      <span class="code-comment">% 해수면 온도 [K]</span>
+    P0 = <span class="code-number">101325</span>;      <span class="code-comment">% 해수면 압력 [Pa]</span>
+    L = <span class="code-number">0.0065</span>;       <span class="code-comment">% 기온 감률 [K/m]</span>
+    R = <span class="code-number">287.058</span>;      <span class="code-comment">% 기체 상수 [J/(kg·K)]</span>
+    g = <span class="code-number">9.81</span>;         <span class="code-comment">% 중력 [m/s²]</span>
+    gamma = <span class="code-number">1.4</span>;      <span class="code-comment">% 비열비</span>
+    
+    T = T0 - L * alt;
+    P = P0 * (T / T0)^(g / (R * L));
+    rho = P / (R * T);
+    a = sqrt(gamma * R * T);
+<span class="code-keyword">end</span></code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 10: Result Interpretation -->
+        <section id="interpretation" class="section">
+            <span class="section-number">Chapter 10</span>
+            <h2>결과 해석</h2>
+            
+            <p>
+                Monte Carlo 결과를 실측 데이터와 비교하여 모델의 정확성을 평가합니다.
+            </p>
+            
+            <h3>실측값 매칭 분석</h3>
+            
+            <p>
+                실측값(339.57m)과 가장 가까운 Monte Carlo 케이스를 찾아 
+                어떤 조건이 필요한지 분석합니다:
+            </p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">최적 매칭 케이스 찾기</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code>target_apogee = <span class="code-number">339.57</span>;
+
+<span class="code-comment">% 가장 가까운 케이스 찾기</span>
+[~, best_idx] = min(abs(results.apogee - target_apogee));
+
+<span class="code-comment">% 시그마 편차 계산</span>
+thrust_sigma = (params.thrust_scale(best_idx) - <span class="code-number">1.0</span>) / (unc.thrust_3sig/<span class="code-number">3</span>);
+Cd0_sigma = (params.Cd0(best_idx) - nom.Cd0) / (nom.Cd0 * unc.Cd0_3sig/<span class="code-number">3</span>);
+
+fprintf(<span class="code-string">'추력 스케일: %.3f (%+.2fσ)\n'</span>, params.thrust_scale(best_idx), thrust_sigma);
+fprintf(<span class="code-string">'Cd0: %.4f (%+.2fσ)\n'</span>, params.Cd0(best_idx), Cd0_sigma);</code></pre>
+            </div>
+            
+            <h3>해석 예시</h3>
+            
+            <div class="concept-card">
+                <h4>🔍 분석 결과</h4>
+                <p>
+                    실측값 339.57m에 도달하려면:
+                </p>
+                <ul>
+                    <li><strong>추력:</strong> 공칭값보다 +1.5σ (약 7.5% 높음)</li>
+                    <li><strong>항력계수:</strong> 공칭값보다 -1.8σ (약 12% 낮음)</li>
+                    <li><strong>질량:</strong> 공칭값보다 -0.5σ (약 2.5% 가벼움)</li>
+                </ul>
+                <p>
+                    이는 공칭 모델이 보수적(항력 과대, 추력 과소 추정)임을 시사합니다.
+                </p>
+            </div>
+            
+            <div class="info-box info">
+                <span class="info-box-icon">📊</span>
+                <div class="info-box-content">
+                    <h5>결론</h5>
+                    <p>
+                        Monte Carlo 시뮬레이션은 단순히 "최대 고도는 Xm"가 아니라
+                        "최대 고도는 X±Ym (95% 신뢰도)"와 같은 
+                        <strong>확률적 예측</strong>을 가능하게 합니다.
+                        이는 안전성 분석과 설계 최적화에 필수적입니다.
+                    </p>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Download Section -->
+        <section id="download" class="download-section">
+            <h2 style="margin-bottom: 1rem; color: var(--text-primary);">📥 코드 다운로드</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+                Monte Carlo 시뮬레이션과 MEX 빌드에 필요한 모든 파일을 다운로드하세요.
+            </p>
+            <div class="download-buttons">
+                <button class="download-btn" onclick="downloadMonteCarlo()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Monte Carlo 메인
+                </button>
+                <button class="download-btn secondary" onclick="downloadCore()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Sim Core 함수
+                </button>
+                <button class="download-btn" onclick="downloadBuild()" style="background: var(--gradient-1);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    MEX 빌드 스크립트
+                </button>
+            </div>
+        </section>
+        
+        <!-- Summary -->
+        <section class="section">
+            <span class="section-number">Summary</span>
+            <h2>핵심 요약</h2>
+            
+            <div class="concept-card">
+                <h4>🎲 Monte Carlo 핵심</h4>
+                <ol>
+                    <li>불확실성을 3σ 값으로 정의</li>
+                    <li>정규분포/균등분포에서 파라미터 샘플링</li>
+                    <li>1000회 이상 시뮬레이션 반복</li>
+                    <li>결과의 평균, 표준편차, 분포 분석</li>
+                    <li>민감도 분석으로 핵심 파라미터 식별</li>
+                </ol>
+            </div>
+            
+            <div class="concept-card blue">
+                <h4>⚡ MEX 가속 핵심</h4>
+                <ul>
+                    <li><code>%#codegen</code> 프래그마로 호환성 확보</li>
+                    <li>배열 크기 명시적 선언</li>
+                    <li>Coder 비호환 함수 직접 구현</li>
+                    <li><code>codegen</code>으로 MEX 파일 생성</li>
+                    <li>10~50배 속도 향상 달성</li>
+                </ul>
+            </div>
+            
+            <div class="concept-card green">
+                <h4>📊 핵심 수식</h4>
+                <ul>
+                    <li><strong>샘플링:</strong> \(x = \mu + \sigma \cdot \text{randn()}\)</li>
+                    <li><strong>상관계수:</strong> \(r = \frac{\text{Cov}(X,Y)}{\sigma_X \sigma_Y}\)</li>
+                    <li><strong>상대속도:</strong> \(\vec{V}_{rel} = \vec{V}_{body} - \vec{W}_{body}\)</li>
+                </ul>
+            </div>
+        </section>
+        
+    </main>
+    
+    <!-- Footer -->
+    <footer class="footer">
+        <p>6DOF Rocket Simulation Guide - Part 2</p>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem;">
+            Monte Carlo Analysis & MEX Acceleration | Educational Purpose
+        </p>
+    </footer>
+    
+    <script>
+        // Monte Carlo main code
+        const monteCarloCode = `%% Monte Carlo 시뮬레이션 (MEX 가속)
+% rocket_sim_core_mex 사용
+clear; clc; close all;
+
+%% 설정
+N_MC = 1000;           % Monte Carlo 횟수
+use_mex = true;        % MEX 사용 여부
+
+%% 불확실성 정의 (3-sigma 값)
+unc.thrust_3sig = 0.15;       % 추력 ±15%
+unc.Cd0_3sig = 0.20;          % Cd0 ±20%
+unc.CN_alpha_3sig = 0.15;     % CN_alpha ±15%
+unc.launch_angle_3sig = 2.0;  % 발사각 ±2°
+unc.mass_3sig = 0.05;         % 질량 ±5%
+unc.wind_max = 3.0;           % 최대 풍속 [m/s]
+
+%% 공칭값
+nom.Cd0 = 0.224;
+nom.CN_alpha = 12.0;
+nom.launch_angle = 86.0;
+nom.Q_force = 1.0;
+nom.Q_moment = 0.01;
+nom.dt = 0.002;
+nom.t_end = 20.0;
+
+%% 결과 저장
+results.apogee = zeros(N_MC, 1);
+results.apogee_time = zeros(N_MC, 1);
+results.max_speed = zeros(N_MC, 1);
+results.max_mach = zeros(N_MC, 1);
+results.impact_time = zeros(N_MC, 1);
+results.drift_x = zeros(N_MC, 1);
+results.drift_y = zeros(N_MC, 1);
+
+% 샘플링된 파라미터
+params.thrust_scale = zeros(N_MC, 1);
+params.Cd0 = zeros(N_MC, 1);
+params.CN_alpha = zeros(N_MC, 1);
+params.launch_angle = zeros(N_MC, 1);
+params.mass_scale = zeros(N_MC, 1);
+params.wind_speed = zeros(N_MC, 1);
+params.wind_dir = zeros(N_MC, 1);
+
+%% MEX 확인
+if use_mex && ~exist('rocket_sim_core_mex', 'file')
+    warning('MEX 파일 없음. MATLAB 버전 사용.');
+    use_mex = false;
+end
+
+%% 파라미터 사전 샘플링
+rng('shuffle');
+
+for i = 1:N_MC
+    params.thrust_scale(i) = 1.0 + (unc.thrust_3sig/3) * randn();
+    params.Cd0(i) = nom.Cd0 * (1.0 + (unc.Cd0_3sig/3) * randn());
+    params.CN_alpha(i) = nom.CN_alpha * (1.0 + (unc.CN_alpha_3sig/3) * randn());
+    params.launch_angle(i) = nom.launch_angle + (unc.launch_angle_3sig/3) * randn();
+    params.mass_scale(i) = 1.0 + (unc.mass_3sig/3) * randn();
+    params.wind_speed(i) = unc.wind_max * rand();
+    params.wind_dir(i) = 2*pi * rand();
+end
+
+%% Monte Carlo 실행
+fprintf('===== Monte Carlo 시뮬레이션 =====\\n');
+fprintf('실행 횟수: %d\\n', N_MC);
+fprintf('MEX 사용: %s\\n', mat2str(use_mex));
+
+tic;
+hWait = waitbar(0, 'MC 진행중...');
+
+if use_mex
+    for i = 1:N_MC
+        [results.apogee(i), results.apogee_time(i), results.max_speed(i), ...
+         results.max_mach(i), results.impact_time(i), results.drift_x(i), results.drift_y(i)] = ...
+            rocket_sim_core_mex(params.thrust_scale(i), params.Cd0(i), params.CN_alpha(i), ...
+                                params.launch_angle(i), params.mass_scale(i), ...
+                                params.wind_speed(i), params.wind_dir(i), ...
+                                nom.Q_force, nom.Q_moment, nom.dt, nom.t_end);
+        if mod(i, 50) == 0
+            waitbar(i/N_MC, hWait, sprintf('MC: %d/%d (%.0f%%)', i, N_MC, i/N_MC*100));
+        end
+    end
+else
+    for i = 1:N_MC
+        [results.apogee(i), results.apogee_time(i), results.max_speed(i), ...
+         results.max_mach(i), results.impact_time(i), results.drift_x(i), results.drift_y(i)] = ...
+            rocket_sim_core(params.thrust_scale(i), params.Cd0(i), params.CN_alpha(i), ...
+                            params.launch_angle(i), params.mass_scale(i), ...
+                            params.wind_speed(i), params.wind_dir(i), ...
+                            nom.Q_force, nom.Q_moment, nom.dt, nom.t_end);
+        if mod(i, 20) == 0
+            waitbar(i/N_MC, hWait, sprintf('MC: %d/%d (%.0f%%)', i, N_MC, i/N_MC*100));
+        end
+    end
+end
+
+close(hWait);
+elapsed = toc;
+
+%% 통계
+fprintf('\\n===== 결과 =====\\n');
+fprintf('소요시간: %.2f초 (%.1f runs/sec)\\n', elapsed, N_MC/elapsed);
+
+apogee_mean = mean(results.apogee);
+apogee_std = std(results.apogee);
+
+fprintf('\\n[최대 고도]\\n');
+fprintf('  평균: %.1f m\\n', apogee_mean);
+fprintf('  표준편차: %.1f m\\n', apogee_std);
+fprintf('  범위: %.1f ~ %.1f m\\n', min(results.apogee), max(results.apogee));
+fprintf('  3σ 범위: %.1f ~ %.1f m\\n', apogee_mean - 3*apogee_std, apogee_mean + 3*apogee_std);
+
+%% 민감도 분석
+fprintf('\\n===== 민감도 (상관계수) =====\\n');
+param_names = {'추력', 'Cd0', 'CN_alpha', '발사각', '질량', '풍속'};
+param_data = [params.thrust_scale, params.Cd0, params.CN_alpha, ...
+              params.launch_angle, params.mass_scale, params.wind_speed];
+
+correlations = zeros(6, 1);
+for i = 1:6
+    r = corrcoef(param_data(:,i), results.apogee);
+    correlations(i) = r(1,2);
+    fprintf('  %s: %.3f\\n', param_names{i}, correlations(i));
+end
+
+%% 시각화
+figure('Name', 'Monte Carlo 결과', 'Position', [100 100 1400 500]);
+
+subplot(1,3,1);
+histogram(results.apogee, 30, 'FaceColor', [0.3 0.6 0.9], 'EdgeColor', 'w');
+hold on;
+xline(apogee_mean, 'r-', 'LineWidth', 2);
+xline(apogee_mean - 3*apogee_std, 'r--');
+xline(apogee_mean + 3*apogee_std, 'r--');
+xline(249, 'g-', 'LineWidth', 2);
+xline(339.57, 'm-', 'LineWidth', 2);
+xlabel('최대 고도 [m]');
+ylabel('빈도');
+title(sprintf('고도 분포 (N=%d, μ=%.1f, σ=%.1f)', N_MC, apogee_mean, apogee_std));
+legend('', '평균', '-3σ', '+3σ', 'OpenRocket', '실측');
+grid on;
+
+subplot(1,3,2);
+scatter(results.drift_x, results.drift_y, 10, results.apogee, 'filled', 'MarkerFaceAlpha', 0.5);
+colorbar; colormap(jet);
+xlabel('X [m]'); ylabel('Y [m]');
+title('착지점 분포');
+axis equal; grid on;
+
+subplot(1,3,3);
+barh(correlations, 'FaceColor', [0.3 0.6 0.9]);
+set(gca, 'YTickLabel', param_names);
+xlabel('상관계수');
+title('민감도 분석');
+xline(0, 'k-');
+grid on;`;
+
+        // Sim core function
+        const coreCode = `function [apogee, apogee_time, max_speed, max_mach, impact_time, drift_x, drift_y] = ...
+    rocket_sim_core(thrust_scale, Cd0, CN_alpha, launch_angle, mass_scale, wind_speed, wind_dir, ...
+                    Q_force, Q_moment, dt, t_end)
+%#codegen
+% ROCKET_SIM_CORE 단일 로켓 시뮬레이션 (MEX용)
+
+%% 공칭 파라미터
+L = 1.275; d = 0.118;
+A_ref = pi * (d/2)^2;
+
+m_dry_nom = 3.6; m_prop_nom = 0.4; m_case_nom = 0.984;
+m_dry = m_dry_nom * mass_scale;
+m_prop = m_prop_nom * mass_scale;
+m_case = m_case_nom * mass_scale;
+m0 = m_dry + m_prop + m_case;
+
+Ixx = 0.5 * m0 * (d/2)^2;
+Iyy = m0 * (L^2/12 + (d/2)^2/4);
+Izz = Iyy;
+
+x_cp = 1.05; x_cg0 = 0.85; Cmq = -10.0;
+
+motor_t = [0.0, 0.08, 0.16, 0.24, 0.32, 0.40, 0.48, 0.56, 0.64, 0.72, ...
+           0.80, 0.88, 0.96, 1.04, 1.12, 1.20, 1.28, 1.36, 1.44, 1.52, ...
+           1.60, 1.68, 1.76, 1.84, 1.92, 2.00, 2.08, 2.16, 2.24, 2.30];
+motor_thrust_nom = [0.0, 2.09, 19.78, 61.4, 108.15, 140.41, 161.28, 195.6, ...
+                    250.59, 284.87, 296.66, 302.71, 307.28, 313.18, 320.62, ...
+                    322.86, 322.07, 319.42, 311.63, 291.73, 255.42, 203.1, ...
+                    144.94, 98.72, 63.05, 35.0, 15.0, 5.0, 1.0, 0.0];
+motor_thrust = motor_thrust_nom * thrust_scale;
+t_burn = 2.30;
+
+%% 초기 조건
+pos = [0; 0; 0];
+vel = [0; 0; 0];
+quat = euler2quat_coder(0, deg2rad(launch_angle), 0);
+omega = [0; 0; 0];
+wind_I = [wind_speed * cos(wind_dir); wind_speed * sin(wind_dir); 0];
+
+N_steps = int32(floor(t_end / dt)) + 1;
+apogee = 0.0; apogee_time = 0.0; max_speed = 0.0; max_mach = 0.0;
+impact_time = t_end; drift_x = 0.0; drift_y = 0.0;
+
+%% 메인 루프
+for i = 1:N_steps
+    tc = double(i-1) * dt;
+    
+    alt = -pos(3);
+    if alt > apogee
+        apogee = alt;
+        apogee_time = tc;
+    end
+    
+    speed = norm(vel);
+    if speed > max_speed
+        max_speed = speed;
+    end
+    
+    if tc < t_burn
+        prop_ratio = 1.0 - tc / t_burn;
+        m_current = m_dry + m_case + m_prop * prop_ratio;
+        x_cg = x_cg0 + 0.05 * (tc / t_burn);
+    else
+        m_current = m_dry + m_case;
+        x_cg = x_cg0 + 0.05;
+    end
+    
+    mass_ratio = m_current / m0;
+    J = [Ixx * mass_ratio, 0, 0; 0, Iyy * mass_ratio, 0; 0, 0, Izz * mass_ratio];
+    
+    T_current = interp1_coder(motor_t, motor_thrust, tc);
+    noise_f = sqrt(Q_force) * randn(3, 1);
+    noise_m = sqrt(Q_moment) * randn(3, 1);
+    noise = [noise_f; noise_m];
+    
+    [pos, vel, quat, omega, mach] = rk4_step(pos, vel, quat, omega, ...
+        T_current, m_current, x_cg, J, Cd0, CN_alpha, x_cp, Cmq, d, A_ref, wind_I, noise, dt);
+    quat = quat / norm(quat);
+    
+    if mach > max_mach
+        max_mach = mach;
+    end
+    
+    if pos(3) > 0 && tc > 3.0
+        impact_time = tc;
+        drift_x = pos(1);
+        drift_y = pos(2);
+        break;
+    end
+end
+end
+
+%% RK4 스텝
+function [pos_new, vel_new, quat_new, omega_new, mach_out] = rk4_step(...
+    pos, vel, quat, omega, T, m, x_cg, J, Cd0, CN_alpha, x_cp, Cmq, d, A_ref, wind_I, noise, dt)
+
+    [k1_pos, k1_vel, k1_quat, k1_omega, mach_out] = dynamics(pos, vel, quat, omega, T, m, x_cg, J, Cd0, CN_alpha, x_cp, Cmq, d, A_ref, wind_I, noise);
+    [k2_pos, k2_vel, k2_quat, k2_omega, ~] = dynamics(pos + 0.5*dt*k1_pos, vel + 0.5*dt*k1_vel, quat + 0.5*dt*k1_quat, omega + 0.5*dt*k1_omega, T, m, x_cg, J, Cd0, CN_alpha, x_cp, Cmq, d, A_ref, wind_I, noise);
+    [k3_pos, k3_vel, k3_quat, k3_omega, ~] = dynamics(pos + 0.5*dt*k2_pos, vel + 0.5*dt*k2_vel, quat + 0.5*dt*k2_quat, omega + 0.5*dt*k2_omega, T, m, x_cg, J, Cd0, CN_alpha, x_cp, Cmq, d, A_ref, wind_I, noise);
+    [k4_pos, k4_vel, k4_quat, k4_omega, ~] = dynamics(pos + dt*k3_pos, vel + dt*k3_vel, quat + dt*k3_quat, omega + dt*k3_omega, T, m, x_cg, J, Cd0, CN_alpha, x_cp, Cmq, d, A_ref, wind_I, noise);
+    
+    pos_new = pos + (dt/6) * (k1_pos + 2*k2_pos + 2*k3_pos + k4_pos);
+    vel_new = vel + (dt/6) * (k1_vel + 2*k2_vel + 2*k3_vel + k4_vel);
+    quat_new = quat + (dt/6) * (k1_quat + 2*k2_quat + 2*k3_quat + k4_quat);
+    omega_new = omega + (dt/6) * (k1_omega + 2*k2_omega + 2*k3_omega + k4_omega);
+end
+
+%% 동역학
+function [pos_dot, vel_dot, quat_dot, omega_dot, mach] = dynamics(pos, vel, quat, omega, T, m, x_cg, J, Cd0, CN_alpha, x_cp, Cmq, d, A_ref, wind_I, noise)
+    R_B2I = quat2dcm_coder(quat);
+    R_I2B = R_B2I';
+    
+    alt = max(0, -pos(3));
+    [rho, a] = atmos_isa(alt);
+    
+    wind_B = R_I2B * wind_I;
+    V_rel = vel - wind_B;
+    V = norm(V_rel);
+    mach = V / a;
+    
+    if V > 0.1
+        alpha = atan2(V_rel(3), V_rel(1));
+        beta = atan2(V_rel(2), V_rel(1));
+    else
+        alpha = 0; beta = 0;
+    end
+    
+    q_dyn = 0.5 * rho * V^2;
+    Cd = Cd0 * (1 + 0.3 * alpha^2);
+    D = q_dyn * A_ref * Cd;
+    
+    if V > 0.1
+        F_aero = -D * (V_rel / V);
+    else
+        F_aero = [0; 0; 0];
+    end
+    
+    SM = x_cp - x_cg;
+    F_N = q_dyn * A_ref * CN_alpha * alpha;
+    M_restore = [0; -F_N * SM; -q_dyn * A_ref * CN_alpha * beta * SM];
+    
+    if V > 1
+        damp = Cmq * q_dyn * A_ref * d^2 / (2*V);
+        M_damp = [0; damp * omega(2); damp * omega(3)];
+    else
+        M_damp = [0; 0; 0];
+    end
+    
+    F_thrust = [T; 0; 0];
+    F_grav = R_I2B * (m * [0; 0; 9.81]);
+    
+    F_total = F_aero + F_thrust + F_grav + noise(1:3);
+    M_total = M_restore + M_damp + noise(4:6);
+    
+    pos_dot = R_B2I * vel;
+    vel_dot = F_total / m - cross(omega, vel);
+    
+    Omega = [0, -omega(1), -omega(2), -omega(3);
+             omega(1), 0, omega(3), -omega(2);
+             omega(2), -omega(3), 0, omega(1);
+             omega(3), omega(2), -omega(1), 0];
+    quat_dot = 0.5 * Omega * quat;
+    omega_dot = J \\ (M_total - cross(omega, J * omega));
+end
+
+%% 유틸리티 함수
+function quat = euler2quat_coder(roll, pitch, yaw)
+    cPhi = cos(roll/2); sPhi = sin(roll/2);
+    cTheta = cos(pitch/2); sTheta = sin(pitch/2);
+    cPsi = cos(yaw/2); sPsi = sin(yaw/2);
+    quat = zeros(4, 1);
+    quat(1) = cPhi*cTheta*cPsi + sPhi*sTheta*sPsi;
+    quat(2) = sPhi*cTheta*cPsi - cPhi*sTheta*sPsi;
+    quat(3) = cPhi*sTheta*cPsi + sPhi*cTheta*sPsi;
+    quat(4) = cPhi*cTheta*sPsi - sPhi*sTheta*cPsi;
+end
+
+function R = quat2dcm_coder(q)
+    q = q / norm(q);
+    qw = q(1); qx = q(2); qy = q(3); qz = q(4);
+    R = zeros(3, 3);
+    R(1,1) = qw^2 + qx^2 - qy^2 - qz^2;
+    R(1,2) = 2*(qx*qy - qw*qz);
+    R(1,3) = 2*(qx*qz + qw*qy);
+    R(2,1) = 2*(qx*qy + qw*qz);
+    R(2,2) = qw^2 - qx^2 + qy^2 - qz^2;
+    R(2,3) = 2*(qy*qz - qw*qx);
+    R(3,1) = 2*(qx*qz - qw*qy);
+    R(3,2) = 2*(qy*qz + qw*qx);
+    R(3,3) = qw^2 - qx^2 - qy^2 + qz^2;
+end
+
+function [rho, a] = atmos_isa(alt)
+    T0 = 288.15; P0 = 101325; L = 0.0065;
+    R = 287.058; g = 9.81; gamma = 1.4;
+    T = T0 - L * alt;
+    P = P0 * (T / T0)^(g / (R * L));
+    rho = P / (R * T);
+    a = sqrt(gamma * R * T);
+end
+
+function yi = interp1_coder(x, y, xi)
+    n = length(x);
+    if xi <= x(1), yi = y(1); return; end
+    if xi >= x(n), yi = y(n); return; end
+    idx = 1;
+    for k = 1:n-1
+        if xi >= x(k) && xi < x(k+1), idx = k; break; end
+    end
+    t = (xi - x(idx)) / (x(idx+1) - x(idx));
+    yi = y(idx) + t * (y(idx+1) - y(idx));
+end
+
+function r = deg2rad(d)
+    r = d * pi / 180;
+end`;
+
+        // MEX build script
+        const buildCode = `%% MEX 빌드 스크립트
+% rocket_sim_core.m을 MEX로 컴파일
+clear all; clc;
+
+%% 입력 타입 정의
+thrust_scale = 1.0;
+Cd0 = 0.15;
+CN_alpha = 12.0;
+launch_angle = 86.0;
+mass_scale = 1.0;
+wind_speed = 0.0;
+wind_dir = 0.0;
+Q_force = 1.0;
+Q_moment = 0.01;
+dt = 0.002;
+t_end = 20.0;
+
+%% codegen 설정
+cfg = coder.config('mex');
+cfg.GenerateReport = true;
+cfg.ReportPotentialDifferences = false;
+cfg.EnableAutoExtrinsicCalls = false;
+
+% 최적화 설정
+cfg.SaturateOnIntegerOverflow = false;
+cfg.IntegrityChecks = false;
+cfg.ResponsivenessChecks = false;
+cfg.ExtrinsicCalls = false;
+
+fprintf('MEX 컴파일 시작...\\n');
+tic;
+
+input_args = {thrust_scale, Cd0, CN_alpha, launch_angle, mass_scale, ...
+              wind_speed, wind_dir, Q_force, Q_moment, dt, t_end};
+
+try
+    codegen('rocket_sim_core', '-config', cfg, '-args', input_args);
+    elapsed = toc;
+    fprintf('MEX 컴파일 완료! 소요시간: %.1f초\\n', elapsed);
+    fprintf('생성 파일: rocket_sim_core_mex.%s\\n', mexext);
+catch ME
+    fprintf('컴파일 에러: %s\\n', ME.message);
+    fprintf('Report 확인: codegen/rocket_sim_core/html/report.mldatx\\n');
+end
+
+%% 테스트 실행
+fprintf('\\n===== 테스트 실행 =====\\n');
+
+% MATLAB 버전
+tic;
+[apogee_m, apogee_time_m, max_speed_m, max_mach_m, impact_m, dx_m, dy_m] = ...
+    rocket_sim_core(1.0, 0.15, 12.0, 86.0, 1.0, 0.0, 0.0, 1.0, 0.01, 0.002, 20.0);
+t_matlab = toc;
+fprintf('MATLAB: apogee=%.1f m, time=%.3f s\\n', apogee_m, t_matlab);
+
+% MEX 버전
+if exist('rocket_sim_core_mex', 'file')
+    tic;
+    [apogee_x, apogee_time_x, max_speed_x, max_mach_x, impact_x, dx_x, dy_x] = ...
+        rocket_sim_core_mex(1.0, 0.15, 12.0, 86.0, 1.0, 0.0, 0.0, 1.0, 0.01, 0.002, 20.0);
+    t_mex = toc;
+    fprintf('MEX:    apogee=%.1f m, time=%.3f s\\n', apogee_x, t_mex);
+    fprintf('속도 향상: %.1fx\\n', t_matlab / t_mex);
+else
+    fprintf('MEX 파일 없음. 컴파일 필요.\\n');
+end`;
+
+        function downloadFile(content, filename) {
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+        
+        function downloadMonteCarlo() {
+            downloadFile(monteCarloCode, 'monte_carlo_main.m');
+        }
+        
+        function downloadCore() {
+            downloadFile(coreCode, 'rocket_sim_core.m');
+        }
+        
+        function downloadBuild() {
+            downloadFile(buildCode, 'build_mex.m');
+        }
+        
+        // Smooth scroll
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

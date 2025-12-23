@@ -1,0 +1,2302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>6DOF 로켓 시뮬레이션 완벽 가이드</title>
+    
+    <!-- MathJax for LaTeX rendering -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: #1a2234;
+            --bg-code: #0d1321;
+            --accent-orange: #ff6b35;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-yellow: #fbbf24;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border-color: #2d3a50;
+            --gradient-1: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            --gradient-2: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            --gradient-3: linear-gradient(135deg, #06b6d4 0%, #10b981 100%);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.8;
+            font-size: 16px;
+        }
+        
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 2rem;
+            background: 
+                radial-gradient(ellipse at 20% 80%, rgba(255, 107, 53, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.1) 0%, transparent 70%),
+                var(--bg-primary);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                radial-gradient(circle at 75% 75%, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+        }
+        
+        .hero-badge {
+            display: inline-block;
+            padding: 0.5rem 1.5rem;
+            background: rgba(255, 107, 53, 0.1);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            border-radius: 50px;
+            font-size: 0.85rem;
+            color: var(--accent-orange);
+            margin-bottom: 2rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .hero h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(2.5rem, 6vw, 5rem);
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .hero-subtitle {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin-bottom: 3rem;
+        }
+        
+        .hero-stats {
+            display: flex;
+            gap: 3rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .stat {
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .scroll-indicator {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            animation: bounce 2s infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateX(-50%) translateY(0); }
+            40% { transform: translateX(-50%) translateY(-10px); }
+            60% { transform: translateX(-50%) translateY(-5px); }
+        }
+        
+        .scroll-indicator svg {
+            width: 30px;
+            height: 30px;
+            stroke: var(--text-muted);
+        }
+        
+        /* Navigation */
+        .nav {
+            position: sticky;
+            top: 0;
+            background: rgba(10, 14, 26, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            z-index: 1000;
+        }
+        
+        .nav-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .nav-logo {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: var(--accent-orange);
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+            flex-wrap: wrap;
+        }
+        
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s;
+        }
+        
+        .nav-links a:hover {
+            color: var(--accent-orange);
+        }
+        
+        /* Main Content */
+        .main-content {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 4rem 2rem;
+        }
+        
+        /* Section Styles */
+        .section {
+            margin-bottom: 6rem;
+        }
+        
+        .section-number {
+            display: inline-block;
+            font-size: 0.75rem;
+            color: var(--accent-orange);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+        
+        .section h2 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        
+        .section h2::after {
+            content: '';
+            position: absolute;
+            bottom: -0.5rem;
+            left: 0;
+            width: 60px;
+            height: 4px;
+            background: var(--gradient-1);
+            border-radius: 2px;
+        }
+        
+        .section h3 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 3rem 0 1rem;
+            color: var(--accent-cyan);
+        }
+        
+        .section h4 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 2rem 0 1rem;
+            color: var(--accent-purple);
+        }
+        
+        .section p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Cards */
+        .concept-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .concept-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient-1);
+        }
+        
+        .concept-card.blue::before {
+            background: var(--gradient-2);
+        }
+        
+        .concept-card.green::before {
+            background: var(--gradient-3);
+        }
+        
+        .concept-card h4 {
+            margin-top: 0;
+            color: var(--text-primary);
+        }
+        
+        /* Math Display */
+        .math-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 1.5rem 0;
+            overflow-x: auto;
+            text-align: center;
+        }
+        
+        .math-block.highlight-orange {
+            border-left: 4px solid var(--accent-orange);
+        }
+        
+        .math-block.highlight-blue {
+            border-left: 4px solid var(--accent-blue);
+        }
+        
+        .math-block.highlight-green {
+            border-left: 4px solid var(--accent-green);
+        }
+        
+        /* Code Blocks */
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin: 1.5rem 0;
+            overflow: hidden;
+        }
+        
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .code-title {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .code-lang {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            background: rgba(255, 107, 53, 0.1);
+            color: var(--accent-orange);
+            border-radius: 20px;
+        }
+        
+        .code-block pre {
+            padding: 1.5rem;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        
+        .code-block code {
+            color: var(--text-secondary);
+        }
+        
+        .code-comment { color: #6b7280; }
+        .code-keyword { color: #c084fc; }
+        .code-number { color: #fbbf24; }
+        .code-string { color: #34d399; }
+        .code-function { color: #60a5fa; }
+        .code-variable { color: #f472b6; }
+        
+        /* Info Boxes */
+        .info-box {
+            display: flex;
+            gap: 1rem;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin: 1.5rem 0;
+        }
+        
+        .info-box.tip {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        
+        .info-box.warning {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+        
+        .info-box.important {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .info-box-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .info-box-content h5 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .info-box-content p {
+            margin: 0;
+            font-size: 0.95rem;
+        }
+        
+        /* Diagrams */
+        .diagram {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+            text-align: center;
+        }
+        
+        .diagram svg {
+            max-width: 100%;
+            height: auto;
+        }
+        
+        .diagram-caption {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-top: 1rem;
+            font-style: italic;
+        }
+        
+        /* Tables */
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 1.5rem 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        th, td {
+            padding: 1rem 1.5rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        th {
+            background: rgba(255, 107, 53, 0.1);
+            color: var(--accent-orange);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
+        
+        td {
+            color: var(--text-secondary);
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        
+        /* Download Button */
+        .download-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 3rem;
+            text-align: center;
+            margin: 4rem 0;
+        }
+        
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 2.5rem;
+            background: var(--gradient-1);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 40px rgba(255, 107, 53, 0.3);
+        }
+        
+        .download-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+        
+        /* Inline Math */
+        .inline-math {
+            color: var(--accent-cyan);
+        }
+        
+        /* Lists */
+        ul, ol {
+            color: var(--text-secondary);
+            padding-left: 1.5rem;
+            margin: 1rem 0;
+        }
+        
+        li {
+            margin-bottom: 0.75rem;
+        }
+        
+        li::marker {
+            color: var(--accent-orange);
+        }
+        
+        /* TOC */
+        .toc {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+        
+        .toc h3 {
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+        }
+        
+        .toc-list {
+            list-style: none;
+            padding: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .toc-list a {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .toc-list a:hover {
+            background: rgba(255, 107, 53, 0.1);
+            color: var(--accent-orange);
+        }
+        
+        .toc-number {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 107, 53, 0.1);
+            color: var(--accent-orange);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        /* Footer */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            padding: 3rem 2rem;
+            text-align: center;
+            color: var(--text-muted);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2rem;
+            }
+            
+            .hero-stats {
+                gap: 1.5rem;
+            }
+            
+            .section h2 {
+                font-size: 1.75rem;
+            }
+            
+            .nav-links {
+                display: none;
+            }
+            
+            .concept-card, .math-block, .code-block {
+                padding: 1.25rem;
+            }
+        }
+        
+        /* Animation */
+        .fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Subsection styling */
+        .subsection {
+            margin: 3rem 0;
+            padding-left: 1.5rem;
+            border-left: 2px solid var(--border-color);
+        }
+        
+        /* Highlight text */
+        .highlight {
+            color: var(--accent-orange);
+            font-weight: 500;
+        }
+        
+        .highlight-blue {
+            color: var(--accent-blue);
+            font-weight: 500;
+        }
+        
+        .highlight-green {
+            color: var(--accent-green);
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero">
+        <span class="hero-badge">Aerospace Engineering</span>
+        <h1>6DOF 로켓 시뮬레이션</h1>
+        <p class="hero-subtitle">
+            6자유도 로켓 동역학의 모든 것을 학부 1학년도 이해할 수 있도록 
+            기초부터 차근차근 설명합니다
+        </p>
+        <div class="hero-stats">
+            <div class="stat">
+                <div class="stat-number">6</div>
+                <div class="stat-label">자유도 (DOF)</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">13</div>
+                <div class="stat-label">상태 변수</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">4</div>
+                <div class="stat-label">쿼터니언 요소</div>
+            </div>
+        </div>
+        <div class="scroll-indicator">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
+            </svg>
+        </div>
+    </section>
+    
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-content">
+            <div class="nav-logo">🚀 6DOF Rocket Sim</div>
+            <ul class="nav-links">
+                <li><a href="#intro">개요</a></li>
+                <li><a href="#coordinates">좌표계</a></li>
+                <li><a href="#quaternion">쿼터니언</a></li>
+                <li><a href="#dynamics">동역학</a></li>
+                <li><a href="#aero">공기역학</a></li>
+                <li><a href="#integration">수치적분</a></li>
+                <li><a href="#download">코드 다운로드</a></li>
+            </ul>
+        </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="main-content">
+        
+        <!-- Table of Contents -->
+        <div class="toc">
+            <h3>📚 목차</h3>
+            <ul class="toc-list">
+                <li><a href="#intro"><span class="toc-number">1</span>6DOF란 무엇인가?</a></li>
+                <li><a href="#coordinates"><span class="toc-number">2</span>좌표계 시스템</a></li>
+                <li><a href="#quaternion"><span class="toc-number">3</span>쿼터니언과 자세 표현</a></li>
+                <li><a href="#dynamics"><span class="toc-number">4</span>뉴턴 역학과 운동방정식</a></li>
+                <li><a href="#aero"><span class="toc-number">5</span>공기역학</a></li>
+                <li><a href="#thrust"><span class="toc-number">6</span>추진 시스템</a></li>
+                <li><a href="#atmosphere"><span class="toc-number">7</span>대기 모델</a></li>
+                <li><a href="#stability"><span class="toc-number">8</span>안정성과 댐핑</a></li>
+                <li><a href="#integration"><span class="toc-number">9</span>수치 적분 (RK4)</a></li>
+                <li><a href="#state"><span class="toc-number">10</span>상태 벡터 구성</a></li>
+            </ul>
+        </div>
+        
+        <!-- Section 1: Introduction -->
+        <section id="intro" class="section">
+            <span class="section-number">Chapter 01</span>
+            <h2>6DOF란 무엇인가?</h2>
+            
+            <p>
+                <span class="highlight">6DOF</span>는 <strong>6 Degrees of Freedom</strong>의 약자로, 
+                한국어로는 <strong>"6자유도"</strong>라고 합니다. 3차원 공간에서 물체가 가질 수 있는 
+                모든 운동의 종류를 의미합니다.
+            </p>
+            
+            <div class="concept-card">
+                <h4>🎯 자유도(DOF)란?</h4>
+                <p>
+                    자유도는 물체가 독립적으로 움직일 수 있는 방향의 수입니다. 
+                    3차원 공간에서 강체(rigid body)는 총 6개의 자유도를 가집니다.
+                </p>
+            </div>
+            
+            <h3>병진 운동 (Translation) - 3 DOF</h3>
+            <p>물체의 위치가 변하는 운동입니다. X, Y, Z 세 방향으로 이동할 수 있습니다.</p>
+            
+            <div class="math-block highlight-orange">
+                \[
+                \text{병진 자유도} = \begin{cases}
+                x & \text{(앞/뒤 이동)} \\
+                y & \text{(좌/우 이동)} \\
+                z & \text{(상/하 이동)}
+                \end{cases}
+                \]
+            </div>
+            
+            <h3>회전 운동 (Rotation) - 3 DOF</h3>
+            <p>물체의 자세가 변하는 운동입니다. 세 축을 중심으로 회전할 수 있습니다.</p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                \text{회전 자유도} = \begin{cases}
+                \phi \text{ (Roll)} & \text{X축 회전 - 옆으로 기울기} \\
+                \theta \text{ (Pitch)} & \text{Y축 회전 - 앞뒤로 기울기} \\
+                \psi \text{ (Yaw)} & \text{Z축 회전 - 좌우로 돌기}
+                \end{cases}
+                \]
+            </div>
+            
+            <div class="info-box tip">
+                <span class="info-box-icon">💡</span>
+                <div class="info-box-content">
+                    <h5>쉬운 비유</h5>
+                    <p>
+                        비행기를 생각해보세요. 앞으로/뒤로, 좌로/우로, 위로/아래로 이동할 수 있고 (3 DOF),
+                        기체를 좌우로 기울이고(Roll), 기수를 올리고 내리고(Pitch), 
+                        좌우로 방향을 틀 수(Yaw) 있습니다 (3 DOF). 총 6 DOF입니다!
+                    </p>
+                </div>
+            </div>
+            
+            <h3>왜 6DOF 시뮬레이션이 필요한가?</h3>
+            <p>
+                간단한 시뮬레이션에서는 로켓이 수직으로만 올라간다고 가정합니다 (1DOF). 
+                하지만 실제 로켓은:
+            </p>
+            <ul>
+                <li>바람에 의해 옆으로 밀립니다</li>
+                <li>중심이동(CG)과 압력중심(CP)의 차이로 회전합니다</li>
+                <li>추력이 완벽히 중심을 통과하지 않아 비틀림이 생깁니다</li>
+                <li>공기저항이 방향에 따라 다르게 작용합니다</li>
+            </ul>
+            <p>
+                이러한 복잡한 현상을 정확히 예측하려면 6DOF 시뮬레이션이 필수입니다.
+            </p>
+        </section>
+        
+        <!-- Section 2: Coordinate Systems -->
+        <section id="coordinates" class="section">
+            <span class="section-number">Chapter 02</span>
+            <h2>좌표계 시스템</h2>
+            
+            <p>
+                로켓 시뮬레이션에서는 여러 좌표계를 사용합니다. 
+                각 좌표계는 서로 다른 목적에 최적화되어 있습니다.
+            </p>
+            
+            <h3>NED 좌표계 (관성 좌표계)</h3>
+            
+            <div class="concept-card blue">
+                <h4>🌍 NED = North-East-Down</h4>
+                <p>
+                    지구에 고정된 좌표계로, 지면을 기준으로 합니다.
+                </p>
+                <ul>
+                    <li><strong>N (North):</strong> 북쪽 방향이 +X</li>
+                    <li><strong>E (East):</strong> 동쪽 방향이 +Y</li>
+                    <li><strong>D (Down):</strong> 아래 방향이 +Z (중요!)</li>
+                </ul>
+            </div>
+            
+            <div class="info-box warning">
+                <span class="info-box-icon">⚠️</span>
+                <div class="info-box-content">
+                    <h5>주의: Z축 방향</h5>
+                    <p>
+                        NED에서는 아래가 +Z입니다! 따라서 고도(altitude)는 <code>-Z</code>로 계산됩니다.
+                        코드에서 <code>alt = -pos(3)</code>인 이유가 바로 이것입니다.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">NED 좌표계에서 고도 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 상태벡터에서 위치 추출</span>
+pos = X(<span class="code-number">1:3</span>);  <span class="code-comment">% [X_north; Y_east; Z_down]</span>
+
+<span class="code-comment">% 고도 계산 (NED에서 Z는 아래가 +)</span>
+alt = -pos(<span class="code-number">3</span>);  <span class="code-comment">% 고도 = -Z_down</span></code></pre>
+            </div>
+            
+            <h3>Body 좌표계 (기체 좌표계)</h3>
+            
+            <div class="concept-card green">
+                <h4>🚀 Body Frame</h4>
+                <p>
+                    로켓에 고정된 좌표계입니다. 로켓과 함께 움직이고 회전합니다.
+                </p>
+                <ul>
+                    <li><strong>X_body:</strong> 로켓 노즈(앞) 방향</li>
+                    <li><strong>Y_body:</strong> 로켓 오른쪽</li>
+                    <li><strong>Z_body:</strong> 로켓 아래</li>
+                </ul>
+            </div>
+            
+            <p>
+                Body frame은 공력 계산에 유용합니다. 
+                로켓 입장에서 바람이 어느 방향에서 오는지 쉽게 알 수 있기 때문입니다.
+            </p>
+            
+            <h3>좌표계 변환</h3>
+            
+            <p>
+                두 좌표계 사이의 변환은 <span class="highlight">회전 행렬(DCM, Direction Cosine Matrix)</span>을 
+                사용합니다.
+            </p>
+            
+            <div class="math-block highlight-green">
+                \[
+                \vec{v}_{NED} = \mathbf{R}_{B \to I} \cdot \vec{v}_{Body}
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(\vec{v}_{NED}\): NED 좌표계에서의 벡터</li>
+                <li>\(\vec{v}_{Body}\): Body 좌표계에서의 벡터</li>
+                <li>\(\mathbf{R}_{B \to I}\): Body에서 관성(Inertial) 좌표계로의 회전 행렬</li>
+            </ul>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">좌표 변환 예시</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% Body frame 속도를 NED frame으로 변환</span>
+<span class="code-variable">R_B2I</span> = GetDCM_QUAT(quat);  <span class="code-comment">% 쿼터니언에서 회전행렬 계산</span>
+<span class="code-variable">V_NED</span> = R_B2I * V_Body;    <span class="code-comment">% 좌표 변환</span>
+
+<span class="code-comment">% 중력을 Body frame으로 변환</span>
+<span class="code-variable">R_I2B</span> = R_B2I';            <span class="code-comment">% 역변환 = 전치행렬</span>
+<span class="code-variable">g_I</span> = [<span class="code-number">0</span>; <span class="code-number">0</span>; <span class="code-number">9.81</span>];      <span class="code-comment">% NED에서 중력 (아래로 +)</span>
+<span class="code-variable">F_grav</span> = R_I2B * (m * g_I); <span class="code-comment">% Body frame 중력</span></code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 3: Quaternion -->
+        <section id="quaternion" class="section">
+            <span class="section-number">Chapter 03</span>
+            <h2>쿼터니언과 자세 표현</h2>
+            
+            <p>
+                3D 회전을 표현하는 방법은 여러 가지가 있습니다. 
+                그 중 <span class="highlight">쿼터니언(Quaternion)</span>이 시뮬레이션에서 가장 많이 사용됩니다.
+            </p>
+            
+            <h3>자세 표현 방법 비교</h3>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>방법</th>
+                            <th>변수 수</th>
+                            <th>장점</th>
+                            <th>단점</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>오일러 각</td>
+                            <td>3개 (φ, θ, ψ)</td>
+                            <td>직관적</td>
+                            <td>짐벌락 문제</td>
+                        </tr>
+                        <tr>
+                            <td>회전 행렬</td>
+                            <td>9개 (3×3)</td>
+                            <td>수학적 명확</td>
+                            <td>중복 (6개 구속조건)</td>
+                        </tr>
+                        <tr>
+                            <td>쿼터니언</td>
+                            <td>4개</td>
+                            <td>특이점 없음, 효율적</td>
+                            <td>덜 직관적</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <h3>짐벌락 (Gimbal Lock) 문제</h3>
+            
+            <div class="concept-card">
+                <h4>🔒 짐벌락이란?</h4>
+                <p>
+                    오일러 각을 사용할 때, 특정 자세(보통 Pitch = ±90°)에서 
+                    두 개의 회전축이 일치하게 되어 하나의 자유도를 잃어버리는 현상입니다.
+                </p>
+                <p>
+                    로켓이 수직으로 올라갈 때 (Pitch ≈ 90°) 바로 이 문제가 발생할 수 있어서,
+                    쿼터니언을 사용합니다.
+                </p>
+            </div>
+            
+            <h3>쿼터니언의 정의</h3>
+            
+            <p>쿼터니언은 4개의 요소로 구성된 수입니다:</p>
+            
+            <div class="math-block highlight-orange">
+                \[
+                q = q_w + q_x \mathbf{i} + q_y \mathbf{j} + q_z \mathbf{k} = \begin{bmatrix} q_w \\ q_x \\ q_y \\ q_z \end{bmatrix}
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(q_w\): 스칼라(실수) 부분</li>
+                <li>\(q_x, q_y, q_z\): 벡터(허수) 부분</li>
+                <li>\(\mathbf{i}, \mathbf{j}, \mathbf{k}\): 허수 단위 (i² = j² = k² = ijk = -1)</li>
+            </ul>
+            
+            <h3>단위 쿼터니언</h3>
+            
+            <p>회전을 표현하려면 <span class="highlight">단위 쿼터니언</span>을 사용해야 합니다:</p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                \|q\| = \sqrt{q_w^2 + q_x^2 + q_y^2 + q_z^2} = 1
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">쿼터니언 정규화</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 시뮬레이션 중 쿼터니언 정규화 (크기를 1로 유지)</span>
+X(<span class="code-number">7:10</span>) = X(<span class="code-number">7:10</span>) / norm(X(<span class="code-number">7:10</span>));</code></pre>
+            </div>
+            
+            <h3>오일러 각에서 쿼터니언으로 변환</h3>
+            
+            <p>
+                ZYX 순서 (Yaw → Pitch → Roll)의 오일러 각을 쿼터니언으로 변환하는 공식:
+            </p>
+            
+            <div class="math-block highlight-green">
+                \[
+                \begin{aligned}
+                q_w &= \cos\frac{\phi}{2}\cos\frac{\theta}{2}\cos\frac{\psi}{2} + \sin\frac{\phi}{2}\sin\frac{\theta}{2}\sin\frac{\psi}{2} \\[8pt]
+                q_x &= \sin\frac{\phi}{2}\cos\frac{\theta}{2}\cos\frac{\psi}{2} - \cos\frac{\phi}{2}\sin\frac{\theta}{2}\sin\frac{\psi}{2} \\[8pt]
+                q_y &= \cos\frac{\phi}{2}\sin\frac{\theta}{2}\cos\frac{\psi}{2} + \sin\frac{\phi}{2}\cos\frac{\theta}{2}\sin\frac{\psi}{2} \\[8pt]
+                q_z &= \cos\frac{\phi}{2}\cos\frac{\theta}{2}\sin\frac{\psi}{2} - \sin\frac{\phi}{2}\sin\frac{\theta}{2}\cos\frac{\psi}{2}
+                \end{aligned}
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">GetQUAT 함수</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-keyword">function</span> quat = <span class="code-function">GetQUAT</span>(psi, theta, phi)
+    <span class="code-comment">% 삼각함수 미리 계산 (효율성)</span>
+    cPhi = cos(phi/<span class="code-number">2</span>); sPhi = sin(phi/<span class="code-number">2</span>);
+    cTheta = cos(theta/<span class="code-number">2</span>); sTheta = sin(theta/<span class="code-number">2</span>);
+    cPsi = cos(psi/<span class="code-number">2</span>); sPsi = sin(psi/<span class="code-number">2</span>);
+    
+    <span class="code-comment">% 쿼터니언 계산</span>
+    qw = cPhi*cTheta*cPsi + sPhi*sTheta*sPsi;
+    qx = sPhi*cTheta*cPsi - cPhi*sTheta*sPsi;
+    qy = cPhi*sTheta*cPsi + sPhi*cTheta*sPsi;
+    qz = cPhi*cTheta*sPsi - sPhi*sTheta*cPsi;
+    
+    quat = [qw, qx, qy, qz];
+<span class="code-keyword">end</span></code></pre>
+            </div>
+            
+            <h3>쿼터니언에서 회전 행렬로 변환</h3>
+            
+            <div class="math-block highlight-orange">
+                \[
+                \mathbf{R} = \begin{bmatrix}
+                q_w^2+q_x^2-q_y^2-q_z^2 & 2(q_xq_y-q_wq_z) & 2(q_xq_z+q_wq_y) \\
+                2(q_xq_y+q_wq_z) & q_w^2-q_x^2+q_y^2-q_z^2 & 2(q_yq_z-q_wq_x) \\
+                2(q_xq_z-q_wq_y) & 2(q_yq_z+q_wq_x) & q_w^2-q_x^2-q_y^2+q_z^2
+                \end{bmatrix}
+                \]
+            </div>
+            
+            <h3>쿼터니언 미분 (시간에 따른 변화)</h3>
+            
+            <p>
+                각속도 \(\vec{\omega} = [\omega_x, \omega_y, \omega_z]^T\)가 주어졌을 때,
+                쿼터니언의 시간 미분은:
+            </p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                \dot{q} = \frac{1}{2} \Omega \cdot q
+                \]
+            </div>
+            
+            <p>여기서 \(\Omega\)는 스큐-대칭 행렬(Skew-symmetric matrix)입니다:</p>
+            
+            <div class="math-block">
+                \[
+                \Omega = \begin{bmatrix}
+                0 & -\omega_x & -\omega_y & -\omega_z \\
+                \omega_x & 0 & \omega_z & -\omega_y \\
+                \omega_y & -\omega_z & 0 & \omega_x \\
+                \omega_z & \omega_y & -\omega_x & 0
+                \end{bmatrix}
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">쿼터니언 미분 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-keyword">function</span> dot_q = <span class="code-function">Derivative_Quat</span>(q, omega_b)
+    q = q(:);          <span class="code-comment">% 열벡터로 변환</span>
+    omega_b = omega_b(:);
+    
+    <span class="code-comment">% Omega 행렬 구성</span>
+    Omega = [    <span class="code-number">0</span>,      -omega_b(<span class="code-number">1</span>), -omega_b(<span class="code-number">2</span>), -omega_b(<span class="code-number">3</span>);
+             omega_b(<span class="code-number">1</span>),       <span class="code-number">0</span>,      omega_b(<span class="code-number">3</span>), -omega_b(<span class="code-number">2</span>);
+             omega_b(<span class="code-number">2</span>), -omega_b(<span class="code-number">3</span>),        <span class="code-number">0</span>,     omega_b(<span class="code-number">1</span>);
+             omega_b(<span class="code-number">3</span>),  omega_b(<span class="code-number">2</span>), -omega_b(<span class="code-number">1</span>),        <span class="code-number">0</span>   ];
+    
+    dot_q = <span class="code-number">0.5</span> * Omega * q;
+<span class="code-keyword">end</span></code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 4: Dynamics -->
+        <section id="dynamics" class="section">
+            <span class="section-number">Chapter 04</span>
+            <h2>뉴턴 역학과 운동방정식</h2>
+            
+            <p>
+                로켓의 운동은 뉴턴의 운동 법칙을 따릅니다. 
+                병진 운동과 회전 운동 각각에 대한 방정식이 필요합니다.
+            </p>
+            
+            <h3>뉴턴의 제2법칙 (병진 운동)</h3>
+            
+            <div class="concept-card">
+                <h4>📐 힘 = 질량 × 가속도</h4>
+                <div class="math-block">
+                    \[
+                    \vec{F} = m \vec{a} = m \frac{d\vec{v}}{dt}
+                    \]
+                </div>
+            </div>
+            
+            <p>Body frame에서 속도 미분을 계산할 때는 회전 효과를 고려해야 합니다:</p>
+            
+            <div class="math-block highlight-orange">
+                \[
+                \frac{d\vec{v}_B}{dt} = \frac{\vec{F}_{total}}{m} - \vec{\omega} \times \vec{v}_B
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(\vec{v}_B\): Body frame에서의 속도</li>
+                <li>\(\vec{F}_{total}\): 총 외력 (추력 + 공력 + 중력)</li>
+                <li>\(\vec{\omega}\): 각속도 벡터</li>
+                <li>\(\vec{\omega} \times \vec{v}_B\): 코리올리 효과 (회전하는 좌표계의 효과)</li>
+            </ul>
+            
+            <div class="info-box tip">
+                <span class="info-box-icon">💡</span>
+                <div class="info-box-content">
+                    <h5>코리올리 효과란?</h5>
+                    <p>
+                        회전하는 좌표계에서 관측할 때 나타나는 가상의 힘입니다. 
+                        Body frame이 로켓과 함께 회전하기 때문에, 이 효과를 고려해야 합니다.
+                    </p>
+                </div>
+            </div>
+            
+            <h3>오일러 방정식 (회전 운동)</h3>
+            
+            <p>회전 운동에 대한 뉴턴 제2법칙입니다:</p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                \vec{M} = \mathbf{J} \dot{\vec{\omega}} + \vec{\omega} \times (\mathbf{J} \vec{\omega})
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(\vec{M}\): 총 모멘트 (토크)</li>
+                <li>\(\mathbf{J}\): 관성 모멘트 텐서 (3×3 행렬)</li>
+                <li>\(\dot{\vec{\omega}}\): 각가속도</li>
+            </ul>
+            
+            <p>각가속도를 구하면:</p>
+            
+            <div class="math-block highlight-green">
+                \[
+                \dot{\vec{\omega}} = \mathbf{J}^{-1} \left( \vec{M} - \vec{\omega} \times (\mathbf{J} \vec{\omega}) \right)
+                \]
+            </div>
+            
+            <h3>관성 모멘트 텐서</h3>
+            
+            <p>
+                로켓을 원통으로 근사하면, 관성 모멘트는 대각 행렬이 됩니다:
+            </p>
+            
+            <div class="math-block">
+                \[
+                \mathbf{J} = \begin{bmatrix}
+                I_{xx} & 0 & 0 \\
+                0 & I_{yy} & 0 \\
+                0 & 0 & I_{zz}
+                \end{bmatrix}
+                \]
+            </div>
+            
+            <p>원통의 관성 모멘트:</p>
+            
+            <div class="math-block highlight-orange">
+                \[
+                \begin{aligned}
+                I_{xx} &= \frac{1}{2} m r^2 \quad \text{(롤 축 - 중심축)} \\[8pt]
+                I_{yy} = I_{zz} &= m \left( \frac{L^2}{12} + \frac{r^2}{4} \right) \quad \text{(피치/요 축)}
+                \end{aligned}
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">관성 모멘트 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 관성모멘트 (원통 근사)</span>
+rocket.Ixx = <span class="code-number">0.5</span> * m0 * (rocket.d/<span class="code-number">2</span>)^<span class="code-number">2</span>;            <span class="code-comment">% 롤 축</span>
+rocket.Iyy = m0 * (rocket.L^<span class="code-number">2</span>/<span class="code-number">12</span> + (rocket.d/<span class="code-number">2</span>)^<span class="code-number">2</span>/<span class="code-number">4</span>); <span class="code-comment">% 피치 축</span>
+rocket.Izz = rocket.Iyy;                              <span class="code-comment">% 요 축 (대칭)</span>
+rocket.J = diag([rocket.Ixx, rocket.Iyy, rocket.Izz]);</code></pre>
+            </div>
+            
+            <h3>로켓에 작용하는 힘들</h3>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>힘의 종류</th>
+                            <th>방향</th>
+                            <th>수식</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>추력 (Thrust)</td>
+                            <td>Body X축 (앞)</td>
+                            <td>\(\vec{F}_T = [T, 0, 0]^T\)</td>
+                        </tr>
+                        <tr>
+                            <td>항력 (Drag)</td>
+                            <td>속도 반대</td>
+                            <td>\(\vec{F}_D = -D \cdot \hat{v}\)</td>
+                        </tr>
+                        <tr>
+                            <td>중력 (Gravity)</td>
+                            <td>아래 (NED에서 +Z)</td>
+                            <td>\(\vec{F}_g = [0, 0, mg]^T\)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <!-- Section 5: Aerodynamics -->
+        <section id="aero" class="section">
+            <span class="section-number">Chapter 05</span>
+            <h2>공기역학 (Aerodynamics)</h2>
+            
+            <p>
+                로켓이 대기 중을 날아갈 때, 공기와의 상호작용으로 여러 힘과 모멘트가 발생합니다.
+            </p>
+            
+            <h3>받음각 (Angle of Attack, α)</h3>
+            
+            <div class="concept-card">
+                <h4>📐 받음각이란?</h4>
+                <p>
+                    로켓 기준축(Body X축)과 상대풍 사이의 각도입니다. 
+                    로켓이 기울어져 날아가면 받음각이 생깁니다.
+                </p>
+            </div>
+            
+            <div class="math-block highlight-orange">
+                \[
+                \alpha = \arctan\left(\frac{V_z}{V_x}\right)
+                \]
+            </div>
+            
+            <p>옆미끄럼각(Sideslip angle, β)도 비슷하게 계산합니다:</p>
+            
+            <div class="math-block">
+                \[
+                \beta = \arctan\left(\frac{V_y}{V_x}\right)
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">받음각 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 받음각 계산 (Body frame 기준)</span>
+<span class="code-keyword">if</span> V > <span class="code-number">0.1</span>
+    alpha = atan2(V_B(<span class="code-number">3</span>), V_B(<span class="code-number">1</span>));  <span class="code-comment">% 피치 평면</span>
+    beta = atan2(V_B(<span class="code-number">2</span>), V_B(<span class="code-number">1</span>));   <span class="code-comment">% 요 평면</span>
+<span class="code-keyword">else</span>
+    alpha = <span class="code-number">0</span>;
+    beta = <span class="code-number">0</span>;
+<span class="code-keyword">end</span></code></pre>
+            </div>
+            
+            <h3>동압 (Dynamic Pressure)</h3>
+            
+            <p>공기역학적 힘의 크기를 결정하는 중요한 량입니다:</p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                q = \frac{1}{2} \rho V^2
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(\rho\): 공기 밀도 [kg/m³]</li>
+                <li>\(V\): 속력 [m/s]</li>
+            </ul>
+            
+            <h3>항력 (Drag)</h3>
+            
+            <div class="math-block highlight-green">
+                \[
+                D = q \cdot A_{ref} \cdot C_D
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(A_{ref}\): 기준 면적 (로켓 단면적) = \(\pi r^2\)</li>
+                <li>\(C_D\): 항력 계수</li>
+            </ul>
+            
+            <p>항력 계수는 받음각에 따라 증가합니다:</p>
+            
+            <div class="math-block">
+                \[
+                C_D = C_{D0} \cdot (1 + k \cdot \alpha^2)
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">항력 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 동압 계산</span>
+q_dyn = <span class="code-number">0.5</span> * rho * V^<span class="code-number">2</span>;
+
+<span class="code-comment">% 항력 계수 (받음각 의존성)</span>
+Cd = rocket.Cd0 * (<span class="code-number">1</span> + <span class="code-number">0.3</span> * alpha^<span class="code-number">2</span>);
+
+<span class="code-comment">% 항력 크기</span>
+D = q_dyn * rocket.A_ref * Cd;
+
+<span class="code-comment">% 항력 벡터 (속도 반대 방향)</span>
+F_aero = -D * (V_B / V);</code></pre>
+            </div>
+            
+            <h3>법선력과 양력</h3>
+            
+            <p>받음각이 생기면 로켓 측면에 힘이 작용합니다:</p>
+            
+            <div class="math-block highlight-orange">
+                \[
+                C_N = C_{N\alpha} \cdot \alpha
+                \]
+            </div>
+            
+            <div class="math-block">
+                \[
+                F_N = q \cdot A_{ref} \cdot C_N
+                \]
+            </div>
+            
+            <p>여기서 \(C_{N\alpha}\)는 법선력 기울기(Normal force slope)로, 
+            받음각 1 rad당 법선력 계수 변화량입니다.</p>
+            
+            <h3>마하수</h3>
+            
+            <p>속도를 음속으로 나눈 무차원 수입니다:</p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                Ma = \frac{V}{a}
+                \]
+            </div>
+            
+            <p>여기서 \(a\)는 음속으로, 고도에 따라 변합니다.</p>
+        </section>
+        
+        <!-- Section 6: Thrust -->
+        <section id="thrust" class="section">
+            <span class="section-number">Chapter 06</span>
+            <h2>추진 시스템</h2>
+            
+            <p>
+                로켓 모터는 추진제를 연소시켜 추력을 발생시킵니다. 
+                이 시뮬레이션에서는 KTM I386 모터를 사용합니다.
+            </p>
+            
+            <h3>추력 곡선</h3>
+            
+            <p>
+                추력은 시간에 따라 변합니다. 모터 데이터로부터 추력 곡선을 정의합니다:
+            </p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">추력 곡선 정의</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 시간 [초]</span>
+motor.t = [<span class="code-number">0.0</span>, <span class="code-number">0.08</span>, <span class="code-number">0.16</span>, ... , <span class="code-number">2.30</span>];
+
+<span class="code-comment">% 추력 [N]</span>
+motor.thrust = [<span class="code-number">0.0</span>, <span class="code-number">2.09</span>, <span class="code-number">19.78</span>, ... , <span class="code-number">0.0</span>];
+
+<span class="code-comment">% 연소 시간</span>
+motor.t_burn = <span class="code-number">2.30</span>;  <span class="code-comment">% [초]</span>
+
+<span class="code-comment">% 현재 시간의 추력 보간</span>
+T_current = interp1(motor.t, motor.thrust, tc, <span class="code-string">'linear'</span>, <span class="code-number">0</span>);</code></pre>
+            </div>
+            
+            <h3>총 임펄스</h3>
+            
+            <p>총 임펄스는 추력을 시간에 대해 적분한 값입니다:</p>
+            
+            <div class="math-block highlight-orange">
+                \[
+                I_{total} = \int_0^{t_{burn}} T(t) \, dt
+                \]
+            </div>
+            
+            <p>이 값은 모터의 "등급"을 결정합니다 (I급 모터 = 320~640 Ns).</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">총 임펄스 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 수치 적분 (사다리꼴 법칙)</span>
+total_impulse = trapz(motor.t, motor.thrust);
+fprintf(<span class="code-string">'총 임펄스: %.1f Ns\n'</span>, total_impulse);</code></pre>
+            </div>
+            
+            <h3>질량 변화</h3>
+            
+            <p>연소 중에 추진제가 소모되어 질량이 감소합니다:</p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                m(t) = m_{dry} + m_{case} + m_{prop} \cdot \left(1 - \frac{t}{t_{burn}}\right)
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">질량 및 무게중심 변화</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-keyword">if</span> tc < motor.t_burn
+    <span class="code-comment">% 연소 중: 추진제 선형 감소</span>
+    prop_remaining = rocket.m_prop * (<span class="code-number">1</span> - tc/motor.t_burn);
+    m_current = rocket.m_dry + rocket.m_case + prop_remaining;
+    
+    <span class="code-comment">% CG 이동 (추진제 소모에 따라 앞으로)</span>
+    x_cg = rocket.x_cg0 + <span class="code-number">0.05</span> * (tc/motor.t_burn);
+<span class="code-keyword">else</span>
+    <span class="code-comment">% 연소 종료 후: 고정</span>
+    m_current = rocket.m_dry + rocket.m_case;
+    x_cg = rocket.x_cg0 + <span class="code-number">0.05</span>;
+<span class="code-keyword">end</span></code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 7: Atmosphere -->
+        <section id="atmosphere" class="section">
+            <span class="section-number">Chapter 07</span>
+            <h2>대기 모델</h2>
+            
+            <p>
+                공기의 밀도, 온도, 음속은 고도에 따라 변합니다. 
+                MATLAB의 <code>atmosisa</code> 함수는 국제 표준 대기(ISA)를 사용합니다.
+            </p>
+            
+            <h3>국제 표준 대기 (ISA)</h3>
+            
+            <div class="concept-card blue">
+                <h4>🌡️ 대류권 (0~11km)</h4>
+                <p>온도가 고도에 따라 선형 감소합니다:</p>
+                <div class="math-block">
+                    \[
+                    T = T_0 - L \cdot h
+                    \]
+                </div>
+                <p>여기서 \(L = 0.0065\) K/m (기온감율)</p>
+            </div>
+            
+            <h3>압력과 밀도</h3>
+            
+            <div class="math-block highlight-orange">
+                \[
+                p = p_0 \left(\frac{T}{T_0}\right)^{\frac{g}{RL}}
+                \]
+            </div>
+            
+            <div class="math-block highlight-blue">
+                \[
+                \rho = \frac{p}{RT}
+                \]
+            </div>
+            
+            <h3>음속</h3>
+            
+            <p>이상기체에서 음속은:</p>
+            
+            <div class="math-block highlight-green">
+                \[
+                a = \sqrt{\gamma R T}
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(\gamma = 1.4\) (공기의 비열비)</li>
+                <li>\(R = 287\) J/(kg·K) (공기의 기체상수)</li>
+            </ul>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">대기 모델 사용</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 현재 고도의 대기 속성</span>
+alt = -pos(<span class="code-number">3</span>);  <span class="code-comment">% NED에서 고도</span>
+[~, a, ~, rho] = atmosisa(max(<span class="code-number">0</span>, alt));
+
+<span class="code-comment">% a: 음속 [m/s]</span>
+<span class="code-comment">% rho: 공기 밀도 [kg/m³]</span>
+
+<span class="code-comment">% 마하수 계산</span>
+Mach = V / a;</code></pre>
+            </div>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>고도 [m]</th>
+                            <th>온도 [K]</th>
+                            <th>밀도 [kg/m³]</th>
+                            <th>음속 [m/s]</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>0 (해수면)</td>
+                            <td>288.15</td>
+                            <td>1.225</td>
+                            <td>340.3</td>
+                        </tr>
+                        <tr>
+                            <td>500</td>
+                            <td>284.9</td>
+                            <td>1.167</td>
+                            <td>338.4</td>
+                        </tr>
+                        <tr>
+                            <td>1000</td>
+                            <td>281.7</td>
+                            <td>1.112</td>
+                            <td>336.4</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <!-- Section 8: Stability -->
+        <section id="stability" class="section">
+            <span class="section-number">Chapter 08</span>
+            <h2>안정성과 댐핑</h2>
+            
+            <p>
+                로켓이 안정적으로 비행하려면 자세가 흐트러져도 다시 원래대로 돌아와야 합니다.
+            </p>
+            
+            <h3>안정 마진 (Static Margin)</h3>
+            
+            <div class="concept-card green">
+                <h4>📍 CG와 CP</h4>
+                <ul>
+                    <li><strong>CG (Center of Gravity):</strong> 무게중심 - 질량이 집중된 점</li>
+                    <li><strong>CP (Center of Pressure):</strong> 압력중심 - 공력이 작용하는 점</li>
+                </ul>
+            </div>
+            
+            <div class="math-block highlight-orange">
+                \[
+                SM = x_{CP} - x_{CG}
+                \]
+            </div>
+            
+            <div class="info-box important">
+                <span class="info-box-icon">⚠️</span>
+                <div class="info-box-content">
+                    <h5>안정성 조건</h5>
+                    <p>
+                        <strong>SM > 0</strong>: CP가 CG보다 뒤에 있으면 안정 (날개가 있는 화살처럼)<br>
+                        <strong>SM < 0</strong>: CP가 CG보다 앞에 있으면 불안정
+                    </p>
+                </div>
+            </div>
+            
+            <h3>복원 모멘트</h3>
+            
+            <p>
+                안정한 로켓이 받음각을 가지면, 원래 방향으로 되돌리려는 모멘트가 발생합니다:
+            </p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                M_{restore} = -F_N \cdot SM = -q \cdot A_{ref} \cdot C_{N\alpha} \cdot \alpha \cdot SM
+                \]
+            </div>
+            
+            <p>음수 부호는 받음각을 줄이는 방향으로 작용함을 의미합니다.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">복원 모멘트 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 안정 마진</span>
+SM = rocket.x_cp - x_cg;  <span class="code-comment">% 양수 = 안정</span>
+
+<span class="code-comment">% 법선력</span>
+CN = rocket.CN_alpha * alpha;
+F_N = q_dyn * rocket.A_ref * CN;
+
+<span class="code-comment">% 복원 모멘트 (피치)</span>
+M_restore_y = -F_N * SM;
+
+<span class="code-comment">% 복원 모멘트 (요)</span>
+M_restore_z = -q_dyn * rocket.A_ref * rocket.CN_alpha * beta * SM;</code></pre>
+            </div>
+            
+            <h3>댐핑 모멘트</h3>
+            
+            <p>
+                회전하는 로켓은 공기저항에 의해 회전이 감소합니다. 
+                이것이 댐핑 효과입니다:
+            </p>
+            
+            <div class="math-block highlight-green">
+                \[
+                M_{damp} = C_{mq} \cdot q \cdot A_{ref} \cdot \frac{d^2}{2V} \cdot \omega
+                \]
+            </div>
+            
+            <p>여기서:</p>
+            <ul>
+                <li>\(C_{mq}\): 피치 댐핑 계수 (보통 음수, 예: -10)</li>
+                <li>\(d\): 로켓 직경</li>
+                <li>\(\omega\): 각속도</li>
+            </ul>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">댐핑 모멘트 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-keyword">if</span> V > <span class="code-number">1</span>
+    damp_factor = rocket.Cmq * q_dyn * rocket.A_ref * rocket.d^<span class="code-number">2</span> / (<span class="code-number">2</span>*V);
+    M_damp = [<span class="code-number">0</span>; ...
+              damp_factor * omega(<span class="code-number">2</span>); ...  <span class="code-comment">% 피치</span>
+              damp_factor * omega(<span class="code-number">3</span>)];     <span class="code-comment">% 요</span>
+<span class="code-keyword">else</span>
+    M_damp = [<span class="code-number">0</span>; <span class="code-number">0</span>; <span class="code-number">0</span>];
+<span class="code-keyword">end</span></code></pre>
+            </div>
+        </section>
+        
+        <!-- Section 9: RK4 -->
+        <section id="integration" class="section">
+            <span class="section-number">Chapter 09</span>
+            <h2>수치 적분 (RK4)</h2>
+            
+            <p>
+                미분방정식을 컴퓨터로 풀려면 수치적 방법이 필요합니다. 
+                <span class="highlight">4차 Runge-Kutta (RK4)</span> 방법이 가장 널리 사용됩니다.
+            </p>
+            
+            <h3>오일러 방법 vs RK4</h3>
+            
+            <div class="concept-card">
+                <h4>🔢 오일러 방법 (1차)</h4>
+                <div class="math-block">
+                    \[
+                    y_{n+1} = y_n + h \cdot f(t_n, y_n)
+                    \]
+                </div>
+                <p>간단하지만 오차가 큼 (O(h²))</p>
+            </div>
+            
+            <div class="concept-card blue">
+                <h4>🎯 RK4 방법 (4차)</h4>
+                <p>4개의 기울기를 계산하여 가중 평균을 사용합니다. 오차가 매우 작음 (O(h⁵))</p>
+            </div>
+            
+            <h3>RK4 알고리즘</h3>
+            
+            <p>미분방정식 \(\frac{dy}{dt} = f(t, y)\)에 대해:</p>
+            
+            <div class="math-block highlight-orange">
+                \[
+                \begin{aligned}
+                k_1 &= f(t_n, y_n) \\[6pt]
+                k_2 &= f\left(t_n + \frac{h}{2}, y_n + \frac{h}{2}k_1\right) \\[6pt]
+                k_3 &= f\left(t_n + \frac{h}{2}, y_n + \frac{h}{2}k_2\right) \\[6pt]
+                k_4 &= f(t_n + h, y_n + h \cdot k_3)
+                \end{aligned}
+                \]
+            </div>
+            
+            <div class="math-block highlight-blue">
+                \[
+                y_{n+1} = y_n + \frac{h}{6}(k_1 + 2k_2 + 2k_3 + k_4)
+                \]
+            </div>
+            
+            <div class="info-box tip">
+                <span class="info-box-icon">💡</span>
+                <div class="info-box-content">
+                    <h5>RK4의 직관적 이해</h5>
+                    <p>
+                        시작점(k₁), 중간점 두 번(k₂, k₃), 끝점(k₄)에서 기울기를 구해서 
+                        가중 평균(1:2:2:1)을 취합니다. 심슨 적분 법칙과 유사한 개념입니다.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">RK4 구현</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% RK4 적분</span>
+[k1, aero] = rocket_dynamics(X, T_current, m_current, x_cg, rocket);
+[k2, ~] = rocket_dynamics(X + <span class="code-number">0.5</span>*dt*k1, T_current, m_current, x_cg, rocket);
+[k3, ~] = rocket_dynamics(X + <span class="code-number">0.5</span>*dt*k2, T_current, m_current, x_cg, rocket);
+[k4, ~] = rocket_dynamics(X + dt*k3, T_current, m_current, x_cg, rocket);
+
+<span class="code-comment">% 상태 업데이트</span>
+X = X + (dt/<span class="code-number">6</span>) * (k1 + <span class="code-number">2</span>*k2 + <span class="code-number">2</span>*k3 + k4);
+
+<span class="code-comment">% 쿼터니언 정규화 (크기 1 유지)</span>
+X(<span class="code-number">7:10</span>) = X(<span class="code-number">7:10</span>) / norm(X(<span class="code-number">7:10</span>));</code></pre>
+            </div>
+            
+            <h3>시간 스텝 선택</h3>
+            
+            <p>
+                시뮬레이션 주파수 1000 Hz (dt = 0.001 s)를 사용합니다. 
+                이는 로켓 동역학의 시간 스케일에 비해 충분히 작습니다.
+            </p>
+            
+            <div class="math-block">
+                \[
+                dt = \frac{1}{f_{sim}} = \frac{1}{1000} = 0.001 \text{ s}
+                \]
+            </div>
+        </section>
+        
+        <!-- Section 10: State Vector -->
+        <section id="state" class="section">
+            <span class="section-number">Chapter 10</span>
+            <h2>상태 벡터 구성</h2>
+            
+            <p>
+                시뮬레이션에서 추적해야 할 모든 변수를 하나의 벡터로 모읍니다. 
+                이것이 <span class="highlight">상태 벡터(State Vector)</span>입니다.
+            </p>
+            
+            <h3>13차원 상태 벡터</h3>
+            
+            <div class="math-block highlight-orange">
+                \[
+                \mathbf{X} = \begin{bmatrix}
+                x \\ y \\ z \\ 
+                v_x \\ v_y \\ v_z \\
+                q_w \\ q_x \\ q_y \\ q_z \\
+                \omega_x \\ \omega_y \\ \omega_z
+                \end{bmatrix}
+                = \begin{bmatrix}
+                \text{위치 (NED)} \\[4pt]
+                \text{속도 (Body)} \\[4pt]
+                \text{쿼터니언} \\[4pt]
+                \text{각속도 (Body)}
+                \end{bmatrix}
+                \]
+            </div>
+            
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>인덱스</th>
+                            <th>변수</th>
+                            <th>설명</th>
+                            <th>좌표계</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1-3</td>
+                            <td>pos</td>
+                            <td>위치 [m]</td>
+                            <td>NED</td>
+                        </tr>
+                        <tr>
+                            <td>4-6</td>
+                            <td>V_B</td>
+                            <td>속도 [m/s]</td>
+                            <td>Body</td>
+                        </tr>
+                        <tr>
+                            <td>7-10</td>
+                            <td>quat</td>
+                            <td>쿼터니언</td>
+                            <td>-</td>
+                        </tr>
+                        <tr>
+                            <td>11-13</td>
+                            <td>omega</td>
+                            <td>각속도 [rad/s]</td>
+                            <td>Body</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <h3>상태 미분 벡터</h3>
+            
+            <p>동역학 함수는 상태의 시간 미분을 반환합니다:</p>
+            
+            <div class="math-block highlight-blue">
+                \[
+                \dot{\mathbf{X}} = \begin{bmatrix}
+                \dot{x} \\ \dot{y} \\ \dot{z} \\ 
+                \dot{v}_x \\ \dot{v}_y \\ \dot{v}_z \\
+                \dot{q}_w \\ \dot{q}_x \\ \dot{q}_y \\ \dot{q}_z \\
+                \dot{\omega}_x \\ \dot{\omega}_y \\ \dot{\omega}_z
+                \end{bmatrix}
+                = \begin{bmatrix}
+                \mathbf{R}_{B \to I} \cdot \vec{v}_B \\[4pt]
+                \frac{\vec{F}}{m} - \vec{\omega} \times \vec{v}_B \\[4pt]
+                \frac{1}{2} \Omega \cdot q \\[4pt]
+                \mathbf{J}^{-1}(\vec{M} - \vec{\omega} \times \mathbf{J}\vec{\omega})
+                \end{bmatrix}
+                \]
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">상태 미분 계산</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 상태 미분</span>
+pos_dot = R_B2I * V_B;                              <span class="code-comment">% 위치 미분</span>
+vel_dot = F_total/m - cross(omega, V_B);            <span class="code-comment">% 속도 미분</span>
+quat_dot = Derivative_Quat(quat, omega);            <span class="code-comment">% 쿼터니언 미분</span>
+omega_dot = J \ (M_total - cross(omega, J*omega));  <span class="code-comment">% 각속도 미분</span>
+
+<span class="code-comment">% 상태 미분 벡터</span>
+Xdot = [pos_dot; vel_dot; quat_dot; omega_dot];</code></pre>
+            </div>
+            
+            <h3>초기 조건</h3>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-title">초기 상태 설정</span>
+                    <span class="code-lang">MATLAB</span>
+                </div>
+                <pre><code><span class="code-comment">% 초기 위치 (발사대)</span>
+pos0 = [<span class="code-number">0</span>; <span class="code-number">0</span>; <span class="code-number">0</span>];
+
+<span class="code-comment">% 초기 속도 (정지)</span>
+vel0 = [<span class="code-number">0</span>; <span class="code-number">0</span>; <span class="code-number">0</span>];
+
+<span class="code-comment">% 발사 각도 (86도 = 수직에서 4도 기울임)</span>
+launch_angle = <span class="code-number">86</span>;
+euler0 = [<span class="code-number">0</span>; deg2rad(launch_angle); <span class="code-number">0</span>];
+
+<span class="code-comment">% 오일러 각을 쿼터니언으로 변환</span>
+quat0 = GetQUAT(euler0(<span class="code-number">3</span>), euler0(<span class="code-number">2</span>), euler0(<span class="code-number">1</span>))';
+
+<span class="code-comment">% 초기 각속도 (정지)</span>
+omega0 = [<span class="code-number">0</span>; <span class="code-number">0</span>; <span class="code-number">0</span>];
+
+<span class="code-comment">% 전체 초기 상태 벡터</span>
+X0 = [pos0; vel0; quat0; omega0];</code></pre>
+            </div>
+        </section>
+        
+        <!-- Download Section -->
+        <section id="download" class="download-section">
+            <h2 style="margin-bottom: 1rem; color: var(--text-primary);">📥 MATLAB 코드 다운로드</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+                완전한 6DOF 로켓 시뮬레이션 코드를 다운로드하세요.<br>
+                MATLAB R2020a 이상에서 실행 가능합니다.
+            </p>
+            <button class="download-btn" onclick="downloadCode()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                rocket_6dof_simulation.m 다운로드
+            </button>
+        </section>
+        
+        <!-- Summary -->
+        <section class="section">
+            <span class="section-number">Summary</span>
+            <h2>핵심 요약</h2>
+            
+            <div class="concept-card">
+                <h4>🎯 시뮬레이션 핵심 흐름</h4>
+                <ol>
+                    <li>현재 상태에서 모든 힘과 모멘트 계산</li>
+                    <li>운동방정식으로 상태 미분 계산</li>
+                    <li>RK4로 다음 시간 스텝의 상태 계산</li>
+                    <li>쿼터니언 정규화</li>
+                    <li>종료 조건 확인 후 반복</li>
+                </ol>
+            </div>
+            
+            <div class="concept-card blue">
+                <h4>📊 핵심 수식 모음</h4>
+                <ul>
+                    <li><strong>병진 운동:</strong> \(\dot{\vec{v}} = \frac{\vec{F}}{m} - \vec{\omega} \times \vec{v}\)</li>
+                    <li><strong>회전 운동:</strong> \(\dot{\vec{\omega}} = \mathbf{J}^{-1}(\vec{M} - \vec{\omega} \times \mathbf{J}\vec{\omega})\)</li>
+                    <li><strong>항력:</strong> \(D = \frac{1}{2}\rho V^2 A C_D\)</li>
+                    <li><strong>복원 모멘트:</strong> \(M = -q A C_{N\alpha} \alpha \cdot SM\)</li>
+                </ul>
+            </div>
+        </section>
+        
+    </main>
+    
+    <!-- Footer -->
+    <footer class="footer">
+        <p>6DOF Rocket Simulation Guide</p>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem;">
+            Created for educational purposes | Based on OpenRocket data
+        </p>
+    </footer>
+    
+    <script>
+        // MATLAB code for download
+        const matlabCode = `%% 6DOF 로켓 시뮬레이션 (교육용 - 패시브 안정) v2
+% OpenRocket 데이터 기반 단순화 모델
+% 모터 데이터 수정 및 Cd 조정
+clear; clc; close all;
+
+%% ===== 로켓 파라미터 (OpenRocket 기반) =====
+% 기하
+rocket.L = 1.275;           % 전체 길이 [m]
+rocket.d = 0.118;           % 직경 [m]
+rocket.A_ref = pi*(rocket.d/2)^2;
+
+% 질량
+rocket.m_dry = 3.6;         % 건조 질량 [kg]
+rocket.m_prop = 0.4;        % 추진제 질량 [kg]
+rocket.m_case = 0.984;      % 케이싱 질량 [kg]
+
+% 초기 총 질량
+m0 = rocket.m_dry + rocket.m_prop + rocket.m_case;
+fprintf('초기 총 질량: %.3f kg\\n', m0);
+
+% 관성모멘트 (원통 근사)
+rocket.Ixx = 0.5 * m0 * (rocket.d/2)^2;
+rocket.Iyy = m0 * (rocket.L^2/12 + (rocket.d/2)^2/4);
+rocket.Izz = rocket.Iyy;
+rocket.J = diag([rocket.Ixx, rocket.Iyy, rocket.Izz]);
+
+% 공력 (선형 모델) - Cd 조정
+rocket.CN_alpha = 12;       % 법선력 기울기 [1/rad]
+rocket.Cd0 = 0.224;          % 제로양력 항력계수
+rocket.x_cp = 1.05;         % 노즈에서 CP [m]
+rocket.x_cg0 = 0.85;        % 노즈에서 초기 CG [m]
+
+% 댐핑 계수
+rocket.Cmq = -10;           % 피치 댐핑
+
+%% ===== 모터 데이터 (KTM I386) - 완성된 데이터 =====
+motor.t = [0.0, 0.08, 0.16, 0.24, 0.32, 0.40, 0.48, 0.56, 0.64, 0.72, ...
+           0.80, 0.88, 0.96, 1.04, 1.12, 1.20, 1.28, 1.36, 1.44, 1.52, ...
+           1.60, 1.68, 1.76, 1.84, 1.92, 2.00, 2.08, 2.16, 2.24, 2.30];
+       
+motor.thrust = [0.0, 2.09, 19.78, 61.4, 108.15, 140.41, 161.28, 195.6, ...
+                250.59, 284.87, 296.66, 302.71, 307.28, 313.18, 320.62, ...
+                322.86, 322.07, 319.42, 311.63, 291.73, 255.42, 203.1, ...
+                144.94, 98.72, 63.05, 35.0, 15.0, 5.0, 1.0, 0.0];
+
+motor.t_burn = 2.30;
+
+total_impulse = trapz(motor.t, motor.thrust);
+fprintf('총 임펄스: %.1f Ns\\n', total_impulse);
+fprintf('평균 추력: %.1f N\\n', total_impulse / motor.t_burn);
+
+figure('Name', '추력 곡선');
+plot(motor.t, motor.thrust, 'b-o', 'LineWidth', 1.5);
+xlabel('Time [s]'); ylabel('Thrust [N]');
+title(sprintf('KTM I386 추력 곡선 (총 임펄스: %.1f Ns)', total_impulse));
+grid on;
+
+%% ===== 초기 조건 =====
+pos0 = [0; 0; 0];
+vel0 = [0; 0; 0];
+launch_angle = 86;
+euler0 = [0; deg2rad(launch_angle); 0];
+quat0 = GetQUAT(euler0(3), euler0(2), euler0(1))';
+omega0 = [0; 0; 0];
+
+X0 = [pos0; vel0; quat0; omega0];
+fprintf('발사 각도: %.1f deg\\n', launch_angle);
+
+%% ===== 시뮬레이션 설정 =====
+sim_hz = 1000;
+dt = 1/sim_hz;
+t_end = 30;
+t = 0:dt:t_end;
+N = length(t);
+
+X_hist = zeros(13, N);
+aero_hist = zeros(6, N);
+mass_hist = zeros(1, N);
+
+%% ===== 메인 루프 =====
+X = X0;
+fprintf('\\n시뮬레이션 시작...\\n');
+
+for i = 1:N
+    tc = t(i);
+    X_hist(:,i) = X;
+    disp(i/sim_hz)
+    
+    if tc < motor.t_burn
+        prop_remaining = rocket.m_prop * (1 - tc/motor.t_burn);
+        m_current = rocket.m_dry + rocket.m_case + prop_remaining;
+        x_cg = rocket.x_cg0 + 0.05 * (tc/motor.t_burn);
+    else
+        m_current = rocket.m_dry + rocket.m_case;
+        x_cg = rocket.x_cg0 + 0.05;
+    end
+    mass_hist(i) = m_current;
+    
+    T_current = interp1(motor.t, motor.thrust, tc, 'linear', 0);
+    
+    [k1, aero] = rocket_dynamics(X, T_current, m_current, x_cg, rocket);
+    [k2, ~] = rocket_dynamics(X + 0.5*dt*k1, T_current, m_current, x_cg, rocket);
+    [k3, ~] = rocket_dynamics(X + 0.5*dt*k2, T_current, m_current, x_cg, rocket);
+    [k4, ~] = rocket_dynamics(X + dt*k3, T_current, m_current, x_cg, rocket);
+    
+    X = X + (dt/6) * (k1 + 2*k2 + 2*k3 + k4);
+    X(7:10) = X(7:10) / norm(X(7:10));
+    
+    aero_hist(1:5,i) = aero;
+    aero_hist(6,i) = T_current;
+    
+    if X(3) > 0 && tc > 3
+        fprintf('지면 충돌: t = %.2f s\\n', tc);
+        X_hist = X_hist(:, 1:i);
+        aero_hist = aero_hist(:, 1:i);
+        mass_hist = mass_hist(1:i);
+        t = t(1:i);
+        break;
+    end
+end
+
+fprintf('시뮬레이션 완료\\n\\n');
+
+%% ===== 디버깅 출력 =====
+fprintf('===== 디버깅 정보 =====\\n');
+speed_hist = sqrt(sum(X_hist(4:6,:).^2, 1));
+[max_speed, idx_max_speed] = max(speed_hist);
+fprintf('최대 속도: %.1f m/s (t = %.2f s)\\n', max_speed, t(idx_max_speed));
+
+idx_burnout = find(t >= motor.t_burn, 1);
+if ~isempty(idx_burnout)
+    fprintf('연소 종료 시 속도: %.1f m/s\\n', speed_hist(idx_burnout));
+    fprintf('연소 종료 시 고도: %.1f m\\n', -X_hist(3, idx_burnout));
+    fprintf('연소 종료 시 질량: %.3f kg\\n', mass_hist(idx_burnout));
+end
+
+[alt_max, idx_max_alt] = max(-X_hist(3,:));
+fprintf('최대 고도: %.1f m (t = %.2f s)\\n', alt_max, t(idx_max_alt));
+fprintf('최대 마하수: %.3f\\n', max(aero_hist(4,:)));
+fprintf('최대 동압: %.1f Pa\\n', max(aero_hist(5,:)));
+fprintf('최대 항력: %.1f N\\n', max(aero_hist(2,:)));
+
+v_burnout = speed_hist(idx_burnout);
+h_burnout = -X_hist(3, idx_burnout);
+h_theoretical = h_burnout + (v_burnout * sin(deg2rad(launch_angle)))^2 / (2 * 9.81);
+fprintf('\\n이론적 최대 고도 (항력 무시): %.1f m\\n', h_theoretical);
+
+fprintf('\\n===== 비교 =====\\n');
+fprintf('OpenRocket 예측: 249 m\\n');
+fprintf('실제 비행 데이터: 339.57 m\\n');
+fprintf('현재 시뮬레이션: %.1f m\\n', alt_max);
+
+%% ===== 결과 시각화 =====
+figure('Name', '6DOF 로켓 시뮬레이션', 'Position', [100 100 1200 800]);
+
+subplot(2,3,1);
+plot(t, -X_hist(3,:), 'b', 'LineWidth', 1.5);
+hold on;
+xline(motor.t_burn, 'r--', '연소종료');
+plot(t(idx_max_alt), alt_max, 'ro', 'MarkerSize', 10, 'MarkerFaceColor', 'r');
+yline(249, 'g--', 'OpenRocket');
+yline(339.57, 'm--', '실측');
+xlabel('Time [s]'); ylabel('Altitude [m]');
+title(sprintf('고도 (최대: %.1f m)', alt_max));
+grid on; legend('고도', '연소종료', '최대고도', 'OpenRocket', '실측', 'Location', 'best');
+
+subplot(2,3,2);
+plot(t, speed_hist, 'b', 'LineWidth', 1.5);
+hold on;
+xline(motor.t_burn, 'r--', '연소종료');
+yline(67, 'g--', 'OpenRocket');
+xlabel('Time [s]'); ylabel('Speed [m/s]');
+title(sprintf('속도 크기 (최대: %.1f m/s)', max_speed));
+grid on;
+
+subplot(2,3,3);
+euler_hist = zeros(3, length(t));
+for i = 1:length(t)
+    euler_hist(:,i) = Quat2Euler(X_hist(7:10,i)');
+end
+plot(t, rad2deg(euler_hist(2,:)), 'b', 'LineWidth', 1.5);
+hold on;
+xline(motor.t_burn, 'r--', '연소종료');
+xlabel('Time [s]'); ylabel('Pitch [deg]');
+title('피치 각도');
+grid on;
+
+subplot(2,3,4);
+plot(t, rad2deg(aero_hist(1,:)), 'b', 'LineWidth', 1.5);
+hold on;
+xline(motor.t_burn, 'r--', '연소종료');
+xlabel('Time [s]'); ylabel('AoA [deg]');
+title('받음각');
+grid on;
+
+subplot(2,3,5);
+yyaxis left;
+plot(t, aero_hist(6,:), 'b', 'LineWidth', 1.5);
+ylabel('Thrust [N]');
+yyaxis right;
+plot(t, aero_hist(2,:), 'r', 'LineWidth', 1.5);
+ylabel('Drag [N]');
+xlabel('Time [s]');
+title('추력 vs 항력');
+legend('추력', '항력');
+grid on;
+
+subplot(2,3,6);
+plot(t, mass_hist(1:length(t)), 'b', 'LineWidth', 1.5);
+hold on;
+xline(motor.t_burn, 'r--', '연소종료');
+xlabel('Time [s]'); ylabel('Mass [kg]');
+title('질량 변화');
+grid on;
+
+figure('Name', '3D 궤적');
+plot3(X_hist(1,:), X_hist(2,:), -X_hist(3,:), 'b', 'LineWidth', 2);
+hold on;
+plot3(X_hist(1,1), X_hist(2,1), -X_hist(3,1), 'go', 'MarkerSize', 15, 'MarkerFaceColor', 'g');
+plot3(X_hist(1,idx_max_alt), X_hist(2,idx_max_alt), alt_max, 'ro', 'MarkerSize', 15, 'MarkerFaceColor', 'r');
+xlabel('X [m]'); ylabel('Y [m]'); zlabel('Altitude [m]');
+title('3D 궤적');
+legend('궤적', '발사점', '최대고도');
+grid on; axis equal;
+view(45, 30);
+
+%% ===== 동역학 함수 =====
+function [Xdot, aero_out] = rocket_dynamics(X, T, m, x_cg, rocket)
+    pos = X(1:3);
+    V_B = X(4:6);
+    quat = X(7:10);
+    omega = X(11:13);
+    
+    R_B2I = GetDCM_QUAT(quat);
+    R_I2B = R_B2I';
+    
+    alt = -pos(3);
+    [~, a, ~, rho] = atmosisa(max(0, alt));
+    
+    V = norm(V_B);
+    Mach = V / a;
+    
+    if V > 0.1
+        alpha = atan2(V_B(3), V_B(1));
+        beta = atan2(V_B(2), V_B(1));
+    else
+        alpha = 0;
+        beta = 0;
+    end
+    
+    q_dyn = 0.5 * rho * V^2;
+    Cd = rocket.Cd0 * (1 + 0.3 * alpha^2);
+    D = q_dyn * rocket.A_ref * Cd;
+    
+    if V > 0.1
+        F_aero = -D * (V_B / V);
+    else
+        F_aero = [0; 0; 0];
+    end
+    
+    SM = rocket.x_cp - x_cg;
+    CN = rocket.CN_alpha * alpha;
+    F_N = q_dyn * rocket.A_ref * CN;
+    
+    M_restore_y = -F_N * SM;
+    M_restore_z = -q_dyn * rocket.A_ref * rocket.CN_alpha * beta * SM;
+    M_aero = [0; M_restore_y; M_restore_z];
+    
+    if V > 1
+        damp_factor = rocket.Cmq * q_dyn * rocket.A_ref * rocket.d^2 / (2*V);
+        M_damp = [0; damp_factor * omega(2); damp_factor * omega(3)];
+    else
+        M_damp = [0; 0; 0];
+    end
+    
+    F_thrust = [T; 0; 0];
+    g_I = [0; 0; 9.81];
+    F_grav = R_I2B * (m * g_I);
+    
+    F_total = F_aero + F_thrust + F_grav;
+    M_total = M_aero + M_damp;
+    
+    J = rocket.J * (m / (rocket.m_dry + rocket.m_prop + rocket.m_case));
+    
+    pos_dot = R_B2I * V_B;
+    vel_dot = F_total/m - cross(omega, V_B);
+    quat_dot = Derivative_Quat(quat, omega);
+    omega_dot = J \\ (M_total - cross(omega, J*omega));
+    
+    Xdot = [pos_dot; vel_dot; quat_dot; omega_dot];
+    aero_out = [alpha; D; F_N; Mach; q_dyn];
+end
+
+%% ===== 유틸리티 함수들 =====
+function R_B2I_quat = GetDCM_QUAT(q)
+    q = q / norm(q);
+    qw = q(1); qx = q(2); qy = q(3); qz = q(4);
+    
+    R_B2I_quat = zeros(3,3);
+    R_B2I_quat(1,1) = qw^2 + qx^2 - qy^2 - qz^2;
+    R_B2I_quat(1,2) = 2*(qx*qy - qw*qz);
+    R_B2I_quat(1,3) = 2*(qx*qz + qw*qy);
+    R_B2I_quat(2,1) = 2*(qx*qy + qw*qz);
+    R_B2I_quat(2,2) = qw^2 - qx^2 + qy^2 - qz^2;
+    R_B2I_quat(2,3) = 2*(qy*qz - qw*qx);
+    R_B2I_quat(3,1) = 2*(qx*qz - qw*qy);
+    R_B2I_quat(3,2) = 2*(qy*qz + qw*qx);
+    R_B2I_quat(3,3) = qw^2 - qx^2 - qy^2 + qz^2;
+end
+
+function quat = GetQUAT(psi, theta, phi)
+    cPhi = cos(phi/2); sPhi = sin(phi/2);
+    cTheta = cos(theta/2); sTheta = sin(theta/2);
+    cPsi = cos(psi/2); sPsi = sin(psi/2);
+    
+    qw = cPhi*cTheta*cPsi + sPhi*sTheta*sPsi;
+    qx = sPhi*cTheta*cPsi - cPhi*sTheta*sPsi;
+    qy = cPhi*sTheta*cPsi + sPhi*cTheta*sPsi;
+    qz = cPhi*cTheta*sPsi - sPhi*sTheta*cPsi;
+    
+    quat = [qw, qx, qy, qz];
+end
+
+function att_euler = Quat2Euler(att_quat)
+    A = GetDCM_QUAT(att_quat);
+    phi = atan2(A(3,2), A(3,3));
+    theta = -asin(A(3,1));
+    psi = atan2(A(2,1), A(1,1));
+    att_euler = [phi; theta; psi];
+end
+
+function dot_q = Derivative_Quat(q, omega_b)
+    q = q(:);
+    omega_b = omega_b(:);
+    
+    Omega = [    0,      -omega_b(1), -omega_b(2), -omega_b(3);
+             omega_b(1),       0,      omega_b(3), -omega_b(2);
+             omega_b(2), -omega_b(3),        0,     omega_b(1);
+             omega_b(3),  omega_b(2), -omega_b(1),        0   ];
+    
+    dot_q = 0.5 * Omega * q;
+end`;
+
+        function downloadCode() {
+            const blob = new Blob([matlabCode], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'rocket_6dof_simulation.m';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+        
+        // Smooth scroll for navigation
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
